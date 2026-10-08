@@ -57,6 +57,14 @@ describe("project documentation", () => {
     expect(guide).toContain("Nothing is pre-selected");
   });
 
+  it("keeps the original task prompt and the decisions made after it", () => {
+    const prompt = readFileSync("AGENT_TASK_PROMPT.md", "utf8");
+
+    expect(prompt.startsWith("# Agent benchmark task: build Decisionator\n")).toBe(true);
+    expect(prompt).toContain("## Decisions made after this prompt");
+    expect(prompt).toContain("decision language chosen at install time");
+  });
+
   it("describes the security model", () => {
     const security = readFileSync("SECURITY.md", "utf8");
 
