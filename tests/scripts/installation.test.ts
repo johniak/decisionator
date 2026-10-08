@@ -359,6 +359,7 @@ describe("release packaging", () => {
       "./third-party-licenses/dompurify-MPL-2.0-or-Apache-2.0.txt",
       "./third-party-licenses/shiki-MIT.txt",
       "./third-party-licenses/recharts-MIT.txt",
+      "./third-party-licenses/idb-keyval-Apache-2.0.txt",
     ]));
     expect(await readFile(`${archive}.sha256`, "utf8")).toContain("decisionator-linux-x64.tar.gz");
   });

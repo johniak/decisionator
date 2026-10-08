@@ -8,6 +8,8 @@ import {
   draftStorageKey,
   emptyDraft,
   emptyGroupDraft,
+  addAttachment,
+  hasAnswer,
   groupDraft,
   initialDraft,
   loadDraft,
@@ -21,6 +23,7 @@ import {
 } from "../../web/draft";
 import { groupStatus, hasUnreadReply, progressSummary } from "../../web/status";
 import { decisionDocument, decisionInput } from "../fixtures";
+import type { DraftAttachment } from "../../web/attachments";
 
 function draftWith(groups: Draft["groups"], extra: Partial<Draft> = {}): Draft {
   return { ...emptyDraft, groups, ...extra };
@@ -98,7 +101,7 @@ describe("draft editing", () => {
     });
 
     expect(unansweredGroups(document, draft).map(({ id }) => id)).toEqual(["copy"]);
-    expect(preparedDiscussions(document, draft)).toEqual([{ groupId: "layout", message: "Why?" }]);
+    expect(preparedDiscussions(document, draft)).toEqual([{ groupId: "layout", message: "Why?", attachments: [] }]);
     expect(groupDraft(draft, "missing")).toEqual(emptyGroupDraft);
     expect(copy!.mode).toBe("text");
   });
@@ -179,5 +182,63 @@ describe("group status", () => {
 
     expect(progressSummary(document, draft)).toBe("1 of 3 answered, 1 waiting for agent, 1 new reply, 1 skipped");
     expect(progressSummary(decisionDocument(), emptyDraft)).toBe("0 of 3 answered");
+  });
+});
+
+describe("draft images", () => {
+  const shot = (seed: string, name = `${seed}.png`): DraftAttachment => ({ id: seed.repeat(64), type: "image/png", name, size: 13 });
+
+  it("counts an image alone as the answer to a text question or an Other answer", () => {
+    const document = decisionDocument();
+    const [, notifications, copy] = document.groups;
+
+    expect(hasAnswer(copy!, { ...emptyGroupDraft, attachments: { text: [shot("a")] } })).toBe(true);
+    expect(hasAnswer(copy!, { ...emptyGroupDraft, attachments: { comment: [shot("a")] } })).toBe(false);
+    expect(hasAnswer(notifications!, { ...emptyGroupDraft, otherSelected: true, attachments: { otherText: [shot("a")] } })).toBe(true);
+    expect(hasAnswer(notifications!, { ...emptyGroupDraft, otherSelected: false, attachments: { otherText: [shot("a")] } })).toBe(false);
+  });
+
+  it("sends answer images only for the answer that applies, and comment images always", () => {
+    const document = decisionDocument();
+    const draft = draftWith({
+      layout: { ...emptyGroupDraft, skipped: true, attachments: { comment: [shot("a")], text: [shot("b")] } },
+      notifications: { ...emptyGroupDraft, selectedOptionIds: ["email"], otherSelected: false, attachments: { otherText: [shot("c")] } },
+      copy: { ...emptyGroupDraft, attachments: { text: [shot("d", "copy.png")] } },
+    }, { globalAttachments: [shot("e")] });
+
+    const request = toConfirmRequest(document, 1, draft);
+    expect(request.groups!.map((group) => group.attachments)).toEqual([
+      [{ field: "comment", id: "a".repeat(64), type: "image/png", name: "a.png" }],
+      undefined,
+      [{ field: "text", id: "d".repeat(64), type: "image/png", name: "copy.png" }],
+    ]);
+    expect(request.globalAttachments).toEqual([{ id: "e".repeat(64), type: "image/png", name: "e.png" }]);
+    expect(buildConfirmedResult(document, 1, request, ({ id }) => `/state/${id}.png`).answers.groups[2])
+      .toMatchObject({ status: "answered", text: null, attachments: [{ field: "text", path: `/state/${"d".repeat(64)}.png` }] });
+  });
+
+  it("drops answer images when skipping or when the question no longer takes them", () => {
+    const current = { ...emptyGroupDraft, text: "x", attachments: { text: [shot("a")], comment: [shot("b")] } };
+    expect(skipGroup(current).attachments).toEqual({ text: [], otherText: [], comment: [shot("b")] });
+
+    const revised = parseDecisionDocument({
+      ...decisionInput(),
+      groups: decisionInput().groups.map((group) => group.id === "notifications" ? { ...group, allowOther: false } : group),
+    });
+    const draft = draftWith({ notifications: { ...emptyGroupDraft, otherSelected: true, attachments: { otherText: [shot("c")], comment: [shot("d")] } } });
+    expect(reconcileDraft(draft, revised).draft.groups.notifications?.attachments).toMatchObject({ otherText: [], comment: [shot("d")] });
+  });
+
+  it("ignores a duplicate image and anything beyond ten per field", () => {
+    const ten = Array.from({ length: 10 }, (_, index) => ({ ...shot("f"), id: index.toString(16).padStart(64, "0") }));
+    expect(addAttachment([shot("a")], shot("a"))).toEqual([shot("a")]);
+    expect(addAttachment(ten, shot("b"))).toBe(ten);
+  });
+
+  it("restores an older draft without images", () => {
+    window.localStorage.setItem("decisionator:draft:old", JSON.stringify({ groups: { layout: { selectedOptionIds: ["steps"] } } }));
+    const draft = loadDraft(window.localStorage, "old");
+    expect(draft.globalAttachments).toEqual([]);
+    expect(draft.groups.layout?.attachments).toEqual({});
   });
 });

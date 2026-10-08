@@ -1,5 +1,10 @@
 import type { DecisionDocument, DecisionGroup } from "../src/domain/decision";
-import type { ConfirmRequest } from "../src/domain/protocol";
+import { maxAttachmentsPerField } from "../src/domain/images";
+import type { AnswerAttachmentField, AttachmentReference, ConfirmRequest, GroupDecision } from "../src/domain/protocol";
+import type { DraftAttachment } from "./attachments";
+
+/** Draft fields that can hold images: the answer fields of the result plus the discussion message. */
+export type DraftAttachmentField = AnswerAttachmentField | "message";
 
 export type GroupDraft = {
   selectedOptionIds: string[];
@@ -11,6 +16,7 @@ export type GroupDraft = {
   message: string;
   dismissing: boolean;
   dismissalReason: string;
+  attachments: Partial<Record<DraftAttachmentField, DraftAttachment[]>>;
 };
 
 export type AssumptionDraft = {
@@ -22,6 +28,7 @@ export type Draft = {
   groups: Record<string, GroupDraft>;
   assumptions: Record<string, AssumptionDraft>;
   globalComment: string;
+  globalAttachments: DraftAttachment[];
   seenMessageIds: string[];
 };
 
@@ -35,9 +42,10 @@ export const emptyGroupDraft: GroupDraft = {
   message: "",
   dismissing: false,
   dismissalReason: "",
+  attachments: {},
 };
 
-export const emptyDraft: Draft = { groups: {}, assumptions: {}, globalComment: "", seenMessageIds: [] };
+export const emptyDraft: Draft = { groups: {}, assumptions: {}, globalComment: "", globalAttachments: [], seenMessageIds: [] };
 
 export function draftStorageKey(sessionId: string): string {
   return `decisionator:draft:${sessionId}`;
@@ -61,6 +69,7 @@ export function loadDraft(storage: Storage | undefined, sessionId: string, docum
       groups: Object.fromEntries(Object.entries(parsed.groups ?? {}).map(([id, group]) => [id, { ...emptyGroupDraft, ...group }])),
       assumptions: parsed.assumptions ?? {},
       globalComment: parsed.globalComment ?? "",
+      globalAttachments: parsed.globalAttachments ?? [],
       seenMessageIds: parsed.seenMessageIds ?? [],
     };
   } catch {
@@ -86,6 +95,24 @@ export function clearDraft(storage: Storage | undefined, sessionId: string): voi
 
 export function groupDraft(draft: Draft, groupId: string): GroupDraft {
   return draft.groups[groupId] ?? emptyGroupDraft;
+}
+
+export function fieldAttachments(draft: GroupDraft, field: DraftAttachmentField): DraftAttachment[] {
+  return draft.attachments[field] ?? [];
+}
+
+/** Adds an image to one field, ignoring duplicates and anything beyond the per-field limit. */
+export function addAttachment(list: DraftAttachment[], attachment: DraftAttachment): DraftAttachment[] {
+  if (list.some(({ id }) => id === attachment.id) || list.length >= maxAttachmentsPerField) return list;
+  return [...list, attachment];
+}
+
+export function withFieldAttachments(draft: GroupDraft, field: DraftAttachmentField, list: DraftAttachment[]): GroupDraft {
+  return { ...draft, attachments: { ...draft.attachments, [field]: list } };
+}
+
+function references(list: DraftAttachment[]): AttachmentReference[] {
+  return list.map(({ id, type, name }) => ({ id, type, name }));
 }
 
 export type RemovedSelection = { groupId: string; label: string };
@@ -117,6 +144,11 @@ export function reconcileDraft(
       otherText: otherAllowed ? current.otherText : "",
       text: group.mode === "text" ? current.text : "",
       dismissing: group.thread.messages.length > 0 && current.dismissing,
+      attachments: {
+        ...current.attachments,
+        otherText: otherAllowed ? fieldAttachments(current, "otherText") : [],
+        text: group.mode === "text" ? fieldAttachments(current, "text") : [],
+      },
     };
   }
   const assumptionIds = new Set(document.assumptions.map(({ id }) => id));
@@ -125,9 +157,12 @@ export function reconcileDraft(
 }
 
 export function hasAnswer(group: DecisionGroup, draft: GroupDraft): boolean {
-  if (group.mode === "text") return draft.text.trim().length > 0;
-  const other = draft.otherSelected && draft.otherText.trim().length > 0;
-  return draft.selectedOptionIds.length > 0 || other;
+  if (group.mode === "text") return draft.text.trim().length > 0 || fieldAttachments(draft, "text").length > 0;
+  return draft.selectedOptionIds.length > 0 || hasOtherAnswer(draft);
+}
+
+function hasOtherAnswer(draft: GroupDraft): boolean {
+  return draft.otherSelected && (draft.otherText.trim().length > 0 || fieldAttachments(draft, "otherText").length > 0);
 }
 
 export function unansweredGroups(document: DecisionDocument, draft: Draft): DecisionGroup[] {
@@ -137,14 +172,26 @@ export function unansweredGroups(document: DecisionDocument, draft: Draft): Deci
   });
 }
 
-export function preparedDiscussions(
-  document: DecisionDocument,
-  draft: Draft,
-): { groupId: string; message: string }[] {
+export type PreparedDiscussion = { groupId: string; message: string; attachments: DraftAttachment[] };
+
+export function preparedDiscussions(document: DecisionDocument, draft: Draft): PreparedDiscussion[] {
   return document.groups
     .filter((group) => group.thread.messages.at(-1)?.author !== "user" && !groupDraft(draft, group.id).dismissing)
-    .map((group) => ({ groupId: group.id, message: groupDraft(draft, group.id).message.trim() }))
+    .map((group) => {
+      const current = groupDraft(draft, group.id);
+      return { groupId: group.id, message: current.message.trim(), attachments: fieldAttachments(current, "message") };
+    })
     .filter(({ message }) => message.length > 0);
+}
+
+export function discussionRequest(items: PreparedDiscussion[]) {
+  return {
+    items: items.map(({ groupId, message, attachments }) => ({
+      groupId,
+      message,
+      ...(attachments.length > 0 ? { attachments: references(attachments) } : {}),
+    })),
+  };
 }
 
 export function toConfirmRequest(document: DecisionDocument, documentVersion: number, draft: Draft): ConfirmRequest {
@@ -155,15 +202,24 @@ export function toConfirmRequest(document: DecisionDocument, documentVersion: nu
       const current = groupDraft(draft, group.id);
       const dismissalReason = current.dismissing ? current.dismissalReason.trim() : "";
       const comment = current.comment.trim();
-      if (current.skipped) return { groupId: group.id, skipped: true, comment, dismissalReason };
-      const otherText = group.allowOther && current.otherSelected ? current.otherText.trim() : "";
-      if (group.mode === "text") return { groupId: group.id, text: current.text.trim(), comment, dismissalReason };
+      const images = (field: AnswerAttachmentField) => references(fieldAttachments(current, field)).map((reference) => ({ field, ...reference }));
+      const answerImages = (fields: AnswerAttachmentField[]): Pick<GroupDecision, "attachments"> => {
+        const attachments = [...fields.flatMap(images), ...images("comment")];
+        return attachments.length > 0 ? { attachments } : {};
+      };
+      if (current.skipped) return { groupId: group.id, skipped: true, comment, dismissalReason, ...answerImages([]) };
+      if (group.mode === "text") {
+        return { groupId: group.id, text: current.text.trim(), comment, dismissalReason, ...answerImages(["text"]) };
+      }
+      const other = group.allowOther && current.otherSelected;
+      const otherText = other ? current.otherText.trim() : "";
       return {
         groupId: group.id,
-        selectedOptionIds: group.mode === "single" && otherText ? [] : current.selectedOptionIds,
+        selectedOptionIds: group.mode === "single" && other && hasOtherAnswer(current) ? [] : current.selectedOptionIds,
         otherText,
         comment,
         dismissalReason,
+        ...answerImages(other ? ["otherText"] : []),
       };
     }),
     assumptions: document.assumptions.map((assumption) => {
@@ -173,6 +229,7 @@ export function toConfirmRequest(document: DecisionDocument, documentVersion: nu
         : { id: assumption.id, accepted: true };
     }),
     globalComment: draft.globalComment.trim(),
+    ...(draft.globalAttachments.length > 0 ? { globalAttachments: references(draft.globalAttachments) } : {}),
   };
 }
 
@@ -192,5 +249,13 @@ export function chooseOther(group: DecisionGroup, current: GroupDraft): GroupDra
 }
 
 export function skipGroup(current: GroupDraft): GroupDraft {
-  return { ...current, selectedOptionIds: [], otherSelected: false, otherText: "", text: "", skipped: true };
+  return {
+    ...current,
+    selectedOptionIds: [],
+    otherSelected: false,
+    otherText: "",
+    text: "",
+    skipped: true,
+    attachments: { ...current.attachments, text: [], otherText: [] },
+  };
 }

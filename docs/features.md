@@ -31,9 +31,15 @@ Flows, sequences, state machines, data models, and timelines are written as Merm
 
 ![Sequence and flow diagrams explaining two order-creation options](assets/diagrams.png)
 
+## Show what you mean with a screenshot
+
+Every answer field, comment, discussion message, and the final comment takes images. Paste a screenshot with ⌘V or Ctrl+V, drop image files on the field, or use **Add image**. Attached images appear as thumbnails that you can enlarge or remove, and an image alone counts as the answer to an open question or an **Other** answer.
+
+Images stay in this browser, and survive a reload, until you press **Send to AI** or **Confirm**. The agent then receives them as PNG, JPEG, GIF, or WebP files of up to 15 MB each, ten per field at most, and the confirmation preview lists the exact file paths.
+
 ## Discuss a question without leaving the page
 
-Use **Discuss with AI** on any question and press **Send to AI**. Only that question's discussion is sent; your choices and comments stay in the browser. While the header shows **AI working**, you can keep answering the other questions, or prepare several discussions and send them together.
+Use **Discuss with AI** on any question and press **Send to AI**. Only that question's discussion is sent, with the images attached to your message; your choices and comments stay in the browser. While the header shows **AI working**, you can keep answering the other questions, or prepare several discussions and send them together.
 
 The agent answers in the same thread. When the discussion changes the decision, it revises the question, and Decisionator marks it **Revised in version 2** and says what changed. Choices that still exist are kept; if an option you picked was removed, the question tells you to choose again. Only you can dismiss a discussion, and your reason is sent with your decisions.
 

@@ -25,6 +25,7 @@ See the [feature guide](docs/features.md) for a visual walkthrough of options an
 - Discuss one question with the agent without leaving the page. Its reply and any revision of that question appear in the same browser session, with the revised group highlighted.
 - Nothing reaches the agent until you press **Send to AI** on a discussion or **Confirm** the batch. Your choices and comments stay in the browser until then.
 - Skipping a question is an explicit choice, recorded as "adopted the recommendation by skipping".
+- Attach screenshots to an answer, a comment, a discussion message, or the final comment: paste them, drop them on the field, or choose files. The agent receives them as image files.
 - Object to any assumption the agent plans to adopt.
 - The confirmation dialog shows exactly what the agent will receive, including the raw JSON.
 - Reload the page or restart the session and your draft is still there.
@@ -106,7 +107,7 @@ The skill also opens a decision screen on its own when a task needs several rela
 
 1. Read each question's context, options, and visuals.
 2. Choose an option, write an **Other** answer, or skip the question.
-3. Add a private comment to any question.
+3. Add a private comment to any question. Paste, drop, or add screenshots to any answer, comment, or message.
 4. Use **Discuss with AI** and **Send to AI** when you need a better option, a clearer trade-off, or a different mockup. Keep answering while the agent replies.
 5. Accept or object to the agent's assumptions.
 6. Open **Review and confirm**, check the preview, and send the decisions.

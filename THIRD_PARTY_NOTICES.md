@@ -11,6 +11,7 @@ Notable direct runtime dependencies include:
 | `diff` | BSD-3-Clause | <https://github.com/kpdecker/jsdiff> |
 | `dompurify` | MPL-2.0 or Apache-2.0 | <https://github.com/cure53/DOMPurify> |
 | `hono` | MIT | <https://hono.dev/> |
+| `idb-keyval` | Apache-2.0 | <https://github.com/jakearchibald/idb-keyval> |
 | `lucide-react` | ISC, with icons derived from Feather under MIT | <https://lucide.dev/> |
 | `mermaid` | MIT | <https://mermaid.js.org/> |
 | `react` and `react-dom` | MIT | <https://react.dev/> |

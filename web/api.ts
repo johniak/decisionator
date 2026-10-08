@@ -1,3 +1,4 @@
+import type { AttachmentType } from "../src/domain/images";
 import type { ConfirmRequest, ConfirmedResult, DiscussionRequest } from "../src/domain/protocol";
 import type { SessionSnapshot } from "./types";
 
@@ -29,6 +30,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   loadSession: () => request<SessionSnapshot>("/api/session"),
+  uploadAttachment: (bytes: ArrayBuffer, type: AttachmentType) => request<{ id: string; type: AttachmentType; size: number }>(
+    "/api/attachments",
+    { method: "POST", body: bytes, headers: { "content-type": type } },
+  ),
   sendDiscussion: (input: DiscussionRequest) => request<{ status: "sent"; session: SessionSnapshot }>("/api/discussion", {
     method: "POST",
     body: JSON.stringify(input),

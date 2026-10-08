@@ -76,6 +76,8 @@ describe("Decisionator skill", () => {
     expect(skill).toContain("Never drop, edit, or reorder a user message");
     expect(skill).toContain("only the human may dismiss a discussion");
     expect(skill).toContain("revise that group's `options`, `mockup`, `recommendation`, or `context`");
+    expect(skill).toContain("When that message has `attachments`, open every image at its `path`");
+    expect(skill).toContain("never add `attachments` to your own messages");
   });
 
   it("records confirmed answers verbatim and stops on cancellation", async () => {
@@ -85,6 +87,8 @@ describe("Decisionator skill", () => {
     expect(skill).toContain("\"adopted the recommendation by skipping\"");
     expect(skill).toContain("\"no decision, ask again\"");
     expect(skill).toContain("Copy every `comment`, every assumption objection, the `globalComment`");
+    expect(skill).toContain("Open every image listed in a group's `attachments`");
+    expect(skill).toContain("`globalAttachments`");
     expect(skill).toContain("`cancelled`: no decisions were made");
     expect(skill).toContain("Never decide on the human's behalf");
   });
@@ -127,10 +131,17 @@ describe("decision contract reference", () => {
 
     expect(result.status).toBe("confirmed");
     expect(Object.keys(result.answers.groups[0])).toEqual(expect.arrayContaining([
-      "selectedOptionIds", "otherText", "comment", "skippedUsingRecommendation", "thread",
+      "selectedOptionIds", "otherText", "comment", "skippedUsingRecommendation", "attachments", "thread",
     ]));
+    expect(result.answers.groups[0].attachments[0]).toEqual({
+      field: "comment",
+      path: expect.stringMatching(/^\/.+\/attachments\/[0-9a-f]{64}\.png$/),
+      type: "image/png",
+      name: expect.any(String),
+    });
     expect(Object.keys(result.answers.assumptions[0])).toEqual(expect.arrayContaining(["accepted", "objection"]));
     expect(result.answers).toHaveProperty("globalComment");
+    expect(result.answers).toHaveProperty("globalAttachments");
   });
 
   it("documents every mockup kind with an example that passes validation", async () => {
@@ -150,6 +161,7 @@ describe("decision contract reference", () => {
     expect(reference).toContain("edits, removes, or reorders an existing message");
     expect(reference).toContain("does not add exactly one `agent` message to each group listed in `groupIds`");
     expect(reference).toContain("sets `dismissed` or `dismissalReason`");
+    expect(reference).toContain("adds `attachments` to an agent message, or changes the `attachments` of a user message");
     expect(reference).toContain("returns the unanswered request again");
   });
 });

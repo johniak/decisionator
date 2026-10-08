@@ -1,8 +1,10 @@
 import { CheckCircle2, CircleX, Eye, Keyboard, LoaderCircle, Radio, Send, WifiOff, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DecisionDocument } from "../src/domain/decision";
 import type { CancelledResult, ConfirmRequest, ConfirmedResult } from "../src/domain/protocol";
 import { api, ApiError } from "./api";
+import { AttachmentContext, browserAttachmentBlobs, type AttachmentBlobs } from "./attachments";
+import { AttachmentControls } from "./components/Attachments";
 import { AnswersPanel } from "./components/AnswersPanel";
 import { AssumptionsSection } from "./components/AssumptionsSection";
 import { ConfirmDialog, ResultSummary } from "./components/ConfirmDialog";
@@ -11,8 +13,10 @@ import { GroupCard, groupCardId } from "./components/GroupCard";
 import { GroupNavigation } from "./components/GroupNavigation";
 import { Markdown } from "./components/Markdown";
 import {
+  addAttachment,
   chooseOption,
   clearDraft,
+  discussionRequest,
   emptyDraft,
   groupDraft,
   loadDraft,
@@ -20,8 +24,10 @@ import {
   reconcileDraft,
   saveDraft,
   skipGroup,
+  withFieldAttachments,
   type Draft,
   type GroupDraft,
+  type PreparedDiscussion,
 } from "./draft";
 import { languageTag } from "./language";
 import { groupStatus, hasUnreadReply, progressSummary, type GroupStatus } from "./status";
@@ -49,7 +55,8 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
-export function App({ storage = browserStorage() }: { storage?: Storage }) {
+export function App({ storage = browserStorage(), attachmentBlobs }: { storage?: Storage; attachmentBlobs?: AttachmentBlobs }) {
+  const [blobs] = useState(() => attachmentBlobs ?? browserAttachmentBlobs());
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -142,6 +149,24 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
     markSeen(groupId);
   }, [markSeen]);
 
+  const updateGroupWith = useCallback((groupId: string, update: (current: GroupDraft) => GroupDraft) => {
+    setDraft((current) => ({ ...current, groups: { ...current.groups, [groupId]: update(groupDraft(current, groupId)) } }));
+    markSeen(groupId);
+  }, [markSeen]);
+
+  useEffect(() => {
+    // A file dropped next to a field must not make the browser leave the page.
+    const keepPage = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    };
+    window.addEventListener("dragover", keepPage);
+    window.addEventListener("drop", keepPage);
+    return () => {
+      window.removeEventListener("dragover", keepPage);
+      window.removeEventListener("drop", keepPage);
+    };
+  }, []);
+
   const selectGroup = useCallback((groupId: string) => {
     setViewedVersion(null);
     setActiveGroupId(groupId);
@@ -193,19 +218,36 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
     return () => window.removeEventListener("keydown", handler);
   }, [document, draft, activeGroupId, confirmOpen, cancelOpen, shortcutsOpen, viewedVersion, completion, selectGroup, updateGroup]);
 
+  const attachmentContext = useMemo(() => ({ blobs, sessionId: session?.sessionId ?? "" }), [blobs, session?.sessionId]);
+  const withAttachments = (content: ReactNode) => (
+    <AttachmentContext.Provider value={attachmentContext}>{content}</AttachmentContext.Provider>
+  );
+
   if (loadingError) return <LoadFailure message={loadingError} />;
-  if (completion) return <CompletionScreen completion={completion} document={document} />;
+  if (completion) return withAttachments(<CompletionScreen completion={completion} document={document} />);
   if (!session || !document) return <LoadingScreen />;
 
-  async function sendDiscussions(items: { groupId: string; message: string }[]) {
+  /** Uploads the attached images right before they are sent; the server keeps each one once. */
+  async function uploadImages(references: { id: string; name: string }[]) {
+    for (const reference of new Map(references.map((item) => [item.id, item])).values()) {
+      const image = await blobs.get(attachmentContext.sessionId, reference.id);
+      if (!image) throw new Error(`The image ${reference.name} is no longer stored in this browser. Remove it and attach it again.`);
+      await api.uploadAttachment(image.bytes, image.type);
+    }
+  }
+
+  async function sendDiscussions(items: PreparedDiscussion[]) {
     if (items.length === 0) return;
     setActionError(null);
     try {
-      const response = await api.sendDiscussion({ items });
+      await uploadImages(items.flatMap(({ attachments }) => attachments));
+      const response = await api.sendDiscussion(discussionRequest(items));
       applySession(response.session);
       setDraft((current) => {
         const groups = { ...current.groups };
-        for (const { groupId } of items) groups[groupId] = { ...groupDraft(current, groupId), message: "" };
+        for (const { groupId } of items) {
+          groups[groupId] = withFieldAttachments({ ...groupDraft(current, groupId), message: "" }, "message", []);
+        }
         return { ...current, groups };
       });
       if (!response.session.live) setCompletion({ status: "discussion" });
@@ -219,8 +261,10 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
     setSending(true);
     setActionError(null);
     try {
+      await uploadImages([...(request.groups ?? []).flatMap((group) => group.attachments ?? []), ...(request.globalAttachments ?? [])]);
       const result = await api.confirm(request);
       clearDraft(storage, session.sessionId);
+      void blobs.clear(session.sessionId);
       setConfirmOpen(false);
       setCompletion(result);
     } catch (error) {
@@ -237,6 +281,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
     try {
       const result = await api.cancel();
       clearDraft(storage, session.sessionId);
+      void blobs.clear(session.sessionId);
       setCancelOpen(false);
       setCompletion({ status: result.status, sessionId: session.sessionId });
     } catch (error) {
@@ -270,7 +315,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
   const revisedGroupIds = latestRevision && latestRevision.number > 1 ? latestRevision.revisedGroupIds : [];
   const objections = Object.values(draft.assumptions).filter((item) => item.objecting).length;
 
-  return (
+  return withAttachments(
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-lockup">
@@ -348,7 +393,8 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
                 removedSelections={viewedRevision ? [] : removedSelections[group.id]}
                 resolveAsset={resolveAsset}
                 onChange={(next) => updateGroup(group.id, next)}
-                onSend={() => void sendDiscussions([{ groupId: group.id, message: groupDraft(draft, group.id).message.trim() }])}
+                onUpdate={(update) => updateGroupWith(group.id, update)}
+                onSend={() => void sendDiscussions(prepared.filter(({ groupId }) => groupId === group.id))}
                 onActivate={() => {
                   if (viewedRevision || activeGroupId === group.id) return;
                   setActiveGroupId(group.id);
@@ -367,15 +413,30 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
 
             {!viewedRevision && (
               <section id="final-comment" className="final-comment-card" tabIndex={-1}>
-                <label>
-                  <span>Anything else the AI agent should know?</span>
-                  <textarea
-                    rows={3}
-                    value={draft.globalComment}
-                    placeholder="A constraint, a deadline, or a decision that is not listed above…"
-                    onChange={(event) => setDraft((current) => ({ ...current, globalComment: event.target.value }))}
-                  />
-                </label>
+                <label htmlFor="final-comment-field">Anything else the AI agent should know?</label>
+                <AttachmentControls
+                  label="your final comment"
+                  attachments={draft.globalAttachments}
+                  onAdd={(attachment) => setDraft((current) => ({
+                    ...current,
+                    globalAttachments: addAttachment(current.globalAttachments, attachment),
+                  }))}
+                  onRemove={(id) => setDraft((current) => ({
+                    ...current,
+                    globalAttachments: current.globalAttachments.filter((attachment) => attachment.id !== id),
+                  }))}
+                >
+                  {(handlers) => (
+                    <textarea
+                      id="final-comment-field"
+                      rows={3}
+                      value={draft.globalComment}
+                      placeholder="A constraint, a deadline, or a decision that is not listed above…"
+                      onChange={(event) => setDraft((current) => ({ ...current, globalComment: event.target.value }))}
+                      {...handlers}
+                    />
+                  )}
+                </AttachmentControls>
                 <small>Sent once, together with your decisions.</small>
               </section>
             )}

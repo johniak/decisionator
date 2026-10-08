@@ -1,7 +1,10 @@
 import { Bot, CircleX, LoaderCircle, MessageSquareText, Send, UserRound, X } from "lucide-react";
 import { useState } from "react";
 import type { DecisionGroup } from "../../src/domain/decision";
-import type { GroupDraft } from "../draft";
+import { fieldAttachments, type GroupDraft } from "../draft";
+import type { AssetResolver } from "../mockups/MockupView";
+import { AttachmentControls, SentAttachments } from "./Attachments";
+import type { ImageHandlers } from "./GroupCard";
 
 type Props = {
   group: DecisionGroup;
@@ -9,15 +12,28 @@ type Props = {
   readOnly?: boolean;
   agentPending: boolean;
   language?: string;
+  images: ImageHandlers;
+  resolveAsset: AssetResolver;
   onChange: (draft: GroupDraft) => void;
   onSend: () => void;
 };
 
-export function DiscussionThread({ group, draft, readOnly = false, agentPending, language, onChange, onSend }: Props) {
+export function DiscussionThread({
+  group,
+  draft,
+  readOnly = false,
+  agentPending,
+  language,
+  images,
+  resolveAsset,
+  onChange,
+  onSend,
+}: Props) {
   const messages = group.thread.messages;
   const waiting = messages.at(-1)?.author === "user";
   const [composerOpen, setComposerOpen] = useState(false);
-  const showComposer = !readOnly && !waiting && !draft.dismissing && (composerOpen || draft.message.length > 0);
+  const showComposer = !readOnly && !waiting && !draft.dismissing
+    && (composerOpen || draft.message.length > 0 || fieldAttachments(draft, "message").length > 0);
   const fieldId = `discussion-${group.id}`;
   const canSend = draft.message.trim().length > 0 && !agentPending;
 
@@ -40,6 +56,7 @@ export function DiscussionThread({ group, draft, readOnly = false, agentPending,
               <div>
                 <strong>{message.author === "user" ? "You" : "AI agent"}</strong>
                 <p lang={message.author === "agent" ? language : undefined}>{message.body}</p>
+                {message.attachments && <SentAttachments attachments={message.attachments} resolveAsset={resolveAsset} />}
               </div>
             </li>
           ))}
@@ -81,20 +98,30 @@ export function DiscussionThread({ group, draft, readOnly = false, agentPending,
           <label htmlFor={fieldId}>
             {messages.length > 0 ? "Reply to the AI agent" : "Ask the AI agent about this decision"}
           </label>
-          <textarea
-            id={fieldId}
-            rows={3}
-            value={draft.message}
-            placeholder="Ask for another option, a clearer trade-off, or a different mockup…"
-            onChange={(event) => onChange({ ...draft, message: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSend) {
-                event.preventDefault();
-                onSend();
-              }
-            }}
-            autoFocus={composerOpen}
-          />
+          <AttachmentControls
+            label="your message"
+            attachments={fieldAttachments(draft, "message")}
+            onAdd={(attachment) => images.add("message", attachment)}
+            onRemove={(id) => images.remove("message", id)}
+          >
+            {(handlers) => (
+              <textarea
+                id={fieldId}
+                rows={3}
+                value={draft.message}
+                placeholder="Ask for another option, a clearer trade-off, or a different mockup…"
+                onChange={(event) => onChange({ ...draft, message: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSend) {
+                    event.preventDefault();
+                    onSend();
+                  }
+                }}
+                autoFocus={composerOpen}
+                {...handlers}
+              />
+            )}
+          </AttachmentControls>
           <div className="discussion-composer-actions">
             <small>Only this discussion is sent. Your answer and comment stay here until you confirm.</small>
             <button type="button" className="send-button" disabled={!canSend} onClick={onSend}>

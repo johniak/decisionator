@@ -185,7 +185,7 @@ Write UTF-8 JSON matching this shape. The example uses every mockup kind and a d
 - `recommendation` is optional. `optionIds` lists the recommended option (exactly one for `single`) and `text` is one sentence on one line. Set `recommended: true` on exactly those options and on no others. The recommendation is shown as a label; it is never pre-selected.
 - `pros` and `cons` are optional lists of short, one-line trade-offs.
 - `mockup` is optional on a group and on each option. See [mockups.md](mockups.md) for every kind.
-- `thread` is the private discussion of one group. Messages alternate between `user` and `agent`, start with a `user` message, and keep stable unique IDs. A document you send may not end a thread with a user message, and only the human sets `dismissed` and `dismissalReason`.
+- `thread` is the private discussion of one group. Messages alternate between `user` and `agent`, start with a `user` message, and keep stable unique IDs. A document you send may not end a thread with a user message, and only the human sets `dismissed` and `dismissalReason`. A user message can have `attachments`, the images the human sent with it; keep them exactly as they are and never add `attachments` to your own messages.
 - `assumptions` lists what you will adopt unless the human objects. Each one needs a unique `id` and Markdown `text`.
 - `versions` is managed by Decisionator: it lists the document versions of the session with the groups each one revised. You may leave it out or send it back unchanged; Decisionator ignores the value you send.
 - Do not write `status`, `accepted`, `objection`, or `answers`. Decisionator derives group status in the UI and returns the human's answers in the confirmed result.
@@ -194,7 +194,7 @@ Decisionator validates the document, reads every image once, and refuses files t
 
 ## Results returned by `decisionator wait`
 
-A **discussion** request contains only the threads the human sent with **Send to AI**, never their selections or comments:
+A **discussion** request contains only the threads the human sent with **Send to AI**, never their selections or comments. A message can carry the images the human attached:
 
 ```text
 {
@@ -202,8 +202,13 @@ A **discussion** request contains only the threads the human sent with **Send to
   "sessionId": "onboarding-plan-1",
   "documentVersion": 1,
   "groupIds": ["layout"],
-  "messages": [{ "groupId": "layout", "messageId": "u-…", "body": "Could the panel start collapsed?" }],
-  "document": { …the authoritative document, already containing that message… }
+  "messages": [{
+    "groupId": "layout",
+    "messageId": "u-…",
+    "body": "Could the panel start collapsed? It covers the total here.",
+    "attachments": [{ "path": "/Users/me/.local/state/decisionator/onboarding-plan-1/attachments/3f…9a.png", "type": "image/png", "name": "Screenshot 2026-10-08 at 13.12.png" }]
+  }],
+  "document": { …the authoritative document, already containing that message and its attachments… }
 }
 ```
 
@@ -227,6 +232,14 @@ A **confirmed** result contains every answer:
         "text": null,
         "comment": "Show the badge only until day 7.",
         "skippedUsingRecommendation": true,
+        "attachments": [
+          {
+            "field": "comment",
+            "path": "/Users/me/.local/state/decisionator/onboarding-plan-1/attachments/9c41e5d2a8f0b7e6c3d1a4f5b2e8c9d0a7b6e5f4c3d2b1a0f9e8d7c6b5a4f3e2.png",
+            "type": "image/png",
+            "name": "badge-on-day-7.png"
+          }
+        ],
         "thread": {
           "messages": [
             { "id": "layout-u1", "author": "user", "body": "Can the page show progress in the menu?" },
@@ -240,13 +253,15 @@ A **confirmed** result contains every answer:
     "assumptions": [
       { "id": "existing-users", "text": "Existing users do not see the new checklist.", "accepted": false, "objection": "Show it to users created this month." }
     ],
-    "globalComment": "Keep the plan under a week."
+    "globalComment": "Keep the plan under a week.",
+    "globalAttachments": []
   }
 }
 ```
 
 - `status` is `answered` or `skipped`. A skipped group with a recommendation returns the recommended options in `selectedOptionIds` and `skippedUsingRecommendation: true`; record it as "adopted the recommendation by skipping". A skipped group without a recommendation returns no options and `skippedUsingRecommendation: false`; record it as "no decision, ask again".
 - `otherText` holds a free **Other** answer, `text` holds the answer to a `text` group, and `comment` holds the human's comment for that group. Each is `null` when empty.
+- `attachments` lists the images the human attached to this group. `field` is `text` or `otherText` when the image is (part of) that answer, and `comment` when it belongs to the comment. An image can be the whole answer, so `text` or `otherText` may be `null` while an image with that field exists. `globalAttachments` lists the images attached to the final comment. Open every image at its `path`; the files are PNG, JPEG, GIF, or WebP.
 - `thread` is the full discussion, including the human's dismissal and reason.
 - Every assumption is listed. `accepted: false` comes with the human's `objection`.
 
@@ -263,6 +278,7 @@ Submit the updated document with `decisionator respond <SESSION_ID> --file <PATH
 - does not add exactly one `agent` message to each group listed in `groupIds`;
 - adds messages to any other group or starts a thread on a new group;
 - sets `dismissed` or `dismissalReason`;
+- adds `attachments` to an agent message, or changes the `attachments` of a user message;
 - removes a group that has a discussion.
 
 Everything else may change: you can revise options, mockups, recommendations, context, assumptions, and the intro, and you can add or remove groups nobody discussed. The browser receives the accepted document as a new version, highlights every revised group, keeps the human's draft for options that still exist, and lets them read earlier versions. If the agent process is interrupted, `decisionator wait` returns the unanswered request again.

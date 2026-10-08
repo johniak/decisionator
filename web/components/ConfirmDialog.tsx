@@ -7,6 +7,7 @@ import { attachmentPath, type AttachmentType } from "../../src/domain/images";
 import { buildConfirmedResult, type ConfirmRequest, type ConfirmedResult } from "../../src/domain/protocol";
 import { toConfirmRequest, unansweredGroups, type Draft } from "../draft";
 import { languageTag } from "../language";
+import { ResultAttachments } from "./Attachments";
 
 type Props = {
   open: boolean;
@@ -211,6 +212,7 @@ export function ResultSummary({ result, document }: { result: ConfirmedResult; d
             {group.otherText && <p className="result-answer">Other: {group.otherText}</p>}
             {group.text && <p className="result-answer">{group.text}</p>}
             {group.comment && <p className="result-comment"><MessageSquareText aria-hidden="true" size={12} /> {group.comment}</p>}
+            {group.attachments.length > 0 && <ResultAttachments attachments={group.attachments} />}
             {group.thread.messages.length > 0 && (
               <p className="result-thread">
                 Discussion with {group.thread.messages.length} message{group.thread.messages.length === 1 ? "" : "s"} included
@@ -236,10 +238,11 @@ export function ResultSummary({ result, document }: { result: ConfirmedResult; d
           </ul>
         </section>
       )}
-      {answers.globalComment && (
+      {(answers.globalComment || answers.globalAttachments.length > 0) && (
         <section className="result-global-comment">
           <h3>Final comment</h3>
-          <p>{answers.globalComment}</p>
+          {answers.globalComment && <p>{answers.globalComment}</p>}
+          {answers.globalAttachments.length > 0 && <ResultAttachments attachments={answers.globalAttachments} />}
         </section>
       )}
     </div>

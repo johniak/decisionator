@@ -2,9 +2,20 @@ import clsx from "clsx";
 import { Bot, Info, Lightbulb, MinusCircle, PenLine, RotateCcw, Sparkles, SkipForward, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { MouseEvent } from "react";
 import type { DecisionGroup, DecisionOption } from "../../src/domain/decision";
-import { chooseOption, chooseOther, skipGroup, type GroupDraft } from "../draft";
+import type { DraftAttachment } from "../attachments";
+import {
+  addAttachment,
+  chooseOption,
+  chooseOther,
+  fieldAttachments,
+  skipGroup,
+  withFieldAttachments,
+  type DraftAttachmentField,
+  type GroupDraft,
+} from "../draft";
 import { MockupView, type AssetResolver } from "../mockups/MockupView";
 import type { GroupStatus } from "../status";
+import { AttachmentControls } from "./Attachments";
 import { DiscussionThread } from "./DiscussionThread";
 import { Markdown } from "./Markdown";
 import { StatusBadge } from "./StatusBadge";
@@ -42,8 +53,15 @@ type Props = {
   removedSelections?: string[];
   resolveAsset: AssetResolver;
   onChange: (draft: GroupDraft) => void;
+  /** Applies a change to the latest draft, for images that finish loading after other edits. */
+  onUpdate: (update: (draft: GroupDraft) => GroupDraft) => void;
   onSend: () => void;
   onActivate: () => void;
+};
+
+export type ImageHandlers = {
+  add: (field: DraftAttachmentField, attachment: DraftAttachment) => void;
+  remove: (field: DraftAttachmentField, id: string) => void;
 };
 
 export function groupCardId(id: string): string {
@@ -64,9 +82,23 @@ export function GroupCard({
   removedSelections = [],
   resolveAsset,
   onChange,
+  onUpdate,
   onSend,
   onActivate,
 }: Props) {
+  const images: ImageHandlers = {
+    add: (field, attachment) => onUpdate((current) => {
+      // An image is an answer too, like typing: it clears a skip and selects Other.
+      const base = field === "otherText" && !current.otherSelected ? chooseOther(group, current)
+        : field === "text" || field === "otherText" ? { ...current, skipped: false } : current;
+      return withFieldAttachments(base, field, addAttachment(fieldAttachments(base, field), attachment));
+    }),
+    remove: (field, id) => onUpdate((current) => withFieldAttachments(
+      current,
+      field,
+      fieldAttachments(current, field).filter((attachment) => attachment.id !== id),
+    )),
+  };
   const recommendedLabels = group.options
     .filter((option) => group.recommendation?.optionIds.includes(option.id))
     .map(({ label }) => label);
@@ -115,16 +147,28 @@ export function GroupCard({
       {group.mockup && <MockupView mockup={group.mockup} title={`${group.title} mockup`} resolveAsset={resolveAsset} />}
 
       {group.mode === "text" ? (
-        <label className="text-answer">
-          <span><PenLine aria-hidden="true" size={13} /> Your answer</span>
-          <textarea
-            rows={4}
-            value={draft.text}
+        <div className="text-answer">
+          <label htmlFor={`${groupCardId(group.id)}-answer`}><PenLine aria-hidden="true" size={13} /> Your answer</label>
+          <AttachmentControls
+            label="your answer"
+            attachments={fieldAttachments(draft, "text")}
             disabled={readOnly}
-            placeholder="Write your answer…"
-            onChange={(event) => onChange({ ...draft, text: event.target.value, skipped: false })}
-          />
-        </label>
+            onAdd={(attachment) => images.add("text", attachment)}
+            onRemove={(id) => images.remove("text", id)}
+          >
+            {(handlers) => (
+              <textarea
+                id={`${groupCardId(group.id)}-answer`}
+                rows={4}
+                value={draft.text}
+                disabled={readOnly}
+                placeholder="Write your answer…"
+                onChange={(event) => onChange({ ...draft, text: event.target.value, skipped: false })}
+                {...handlers}
+              />
+            )}
+          </AttachmentControls>
+        </div>
       ) : (
         <div
           className={clsx("option-list", wide && "wide")}
@@ -145,7 +189,7 @@ export function GroupCard({
             />
           ))}
           {group.allowOther && (
-            <OtherOption group={group} draft={draft} readOnly={readOnly} onChange={onChange} />
+            <OtherOption group={group} draft={draft} readOnly={readOnly} images={images} onChange={onChange} />
           )}
         </div>
       )}
@@ -177,16 +221,27 @@ export function GroupCard({
               {recommendedLabels.length > 0 ? "Skip and use the recommendation" : "Skip this question"}
             </button>
           )}
-          <label className="comment-field">
-            <span>Comment for the AI agent <small>Sent only when you confirm</small></span>
-            <textarea
-              rows={2}
-              value={draft.comment}
-              data-shortcut="comment"
-              placeholder="Add context, a condition, or a concern…"
-              onChange={(event) => onChange({ ...draft, comment: event.target.value })}
-            />
-          </label>
+          <div className="comment-field">
+            <label htmlFor={`${groupCardId(group.id)}-comment`}>Comment for the AI agent <small>Sent only when you confirm</small></label>
+            <AttachmentControls
+              label="your comment"
+              attachments={fieldAttachments(draft, "comment")}
+              onAdd={(attachment) => images.add("comment", attachment)}
+              onRemove={(id) => images.remove("comment", id)}
+            >
+              {(handlers) => (
+                <textarea
+                  id={`${groupCardId(group.id)}-comment`}
+                  rows={2}
+                  value={draft.comment}
+                  data-shortcut="comment"
+                  placeholder="Add context, a condition, or a concern…"
+                  onChange={(event) => onChange({ ...draft, comment: event.target.value })}
+                  {...handlers}
+                />
+              )}
+            </AttachmentControls>
+          </div>
         </div>
       )}
 
@@ -196,6 +251,8 @@ export function GroupCard({
         readOnly={readOnly}
         agentPending={agentPending}
         language={language}
+        images={images}
+        resolveAsset={resolveAsset}
         onChange={onChange}
         onSend={onSend}
       />
@@ -272,14 +329,32 @@ function OtherOption({
   group,
   draft,
   readOnly,
+  images,
   onChange,
 }: {
   group: DecisionGroup;
   draft: GroupDraft;
   readOnly: boolean;
+  images: ImageHandlers;
   onChange: (draft: GroupDraft) => void;
 }) {
   const inputId = `${groupCardId(group.id)}-other`;
+  const field = (handlers: object) => (
+    <input
+      className="other-input"
+      type="text"
+      aria-label={`Other answer for ${group.title}`}
+      data-shortcut="other"
+      value={draft.otherText}
+      disabled={readOnly}
+      placeholder="Describe your own answer…"
+      onChange={(event) => {
+        const next = draft.otherSelected ? draft : chooseOther(group, draft);
+        onChange({ ...next, otherSelected: true, otherText: event.target.value });
+      }}
+      {...handlers}
+    />
+  );
   return (
     <div className={clsx("option-card other-option", draft.otherSelected && "selected")}>
       <label className="option-choice" htmlFor={inputId}>
@@ -294,19 +369,16 @@ function OtherOption({
         <span className="option-letter" aria-hidden="true"><MinusCircle size={12} /></span>
         <span className="option-label">Other</span>
       </label>
-      <input
-        className="other-input"
-        type="text"
-        aria-label={`Other answer for ${group.title}`}
-        data-shortcut="other"
-        value={draft.otherText}
-        disabled={readOnly}
-        placeholder="Describe your own answer…"
-        onChange={(event) => {
-          const next = draft.otherSelected ? draft : chooseOther(group, draft);
-          onChange({ ...next, otherSelected: true, otherText: event.target.value });
-        }}
-      />
+      {/* Always wrapped, so the field keeps focus when typing selects Other. */}
+      <AttachmentControls
+        label="your Other answer"
+        attachments={fieldAttachments(draft, "otherText")}
+        disabled={readOnly || !draft.otherSelected}
+        onAdd={(attachment) => images.add("otherText", attachment)}
+        onRemove={(id) => images.remove("otherText", id)}
+      >
+        {field}
+      </AttachmentControls>
     </div>
   );
 }
