@@ -1,6 +1,6 @@
 {
   "name": "decisionator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local human-in-the-loop interface for batched decisions between an AI coding agent and a human.",
   "private": true,
   "license": "MIT",
