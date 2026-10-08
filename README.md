@@ -158,7 +158,7 @@ Useful commands:
 ```sh
 bun run typecheck   # TypeScript validation
 bun run test        # Production web build and full test suite
-bun run build       # Single-file web app and native executable
+bun run build       # Single-file web app and native executable, signed ad hoc on macOS
 bun run check       # Typecheck, tests, and production build
 ```
 
@@ -172,7 +172,7 @@ The decision contract is documented for agents in [`skills/decisionator/referenc
 2. Ensure `bun run check` passes.
 3. Create and push a tag such as `v0.1.0`.
 
-The release workflow builds binaries for macOS and Linux on x64 and ARM64, packages the skill and license notices, creates SHA-256 checksums, and publishes a GitHub Release.
+The release workflow builds binaries for macOS and Linux on x64 and ARM64, packages the skill and license notices, creates SHA-256 checksums, and publishes a GitHub Release. macOS binaries are built on macOS runners and signed ad hoc by `scripts/build-cli.sh`, because `bun build --compile` leaves them with an invalid signature that macOS refuses to run; the release fails if a packaged macOS binary does not pass `codesign --verify --strict`.
 
 ## Project status
 

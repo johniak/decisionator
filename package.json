@@ -1,6 +1,6 @@
 {
   "name": "decisionator",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A local human-in-the-loop interface for batched decisions between an AI coding agent and a human.",
   "private": true,
   "license": "MIT",
@@ -28,7 +28,7 @@
     "demo": "bun run build:web && bun scripts/demo.ts --live",
     "build": "bun run build:web && bun run build:cli",
     "build:web": "vite build && bun scripts/prepare-web.ts",
-    "build:cli": "bun build --compile --minify --target=bun src/cli.ts --outfile dist/decisionator",
+    "build:cli": "./scripts/build-cli.sh dist/decisionator",
     "typecheck": "tsc --noEmit",
     "test": "bun run build:web && vitest run",
     "test:watch": "vitest",
