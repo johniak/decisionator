@@ -77,7 +77,7 @@ async function updateFixture(installedVersion: string, releaseVersion: string, {
   const archiveName = `decisionator-${platform}.tar.gz`;
   await run("tar", ["-czf", join(releaseDir, archiveName), "-C", payload, "."]);
   const { stdout } = await run("shasum", ["-a", "256", archiveName], { cwd: releaseDir });
-  await writeFile(join(releaseDir, `${archiveName}.sha256`), corruptChecksum ? stdout.replace(/^[0-9a-f]/, "0") : stdout);
+  await writeFile(join(releaseDir, `${archiveName}.sha256`), corruptChecksum ? `${stdout.startsWith("0") ? "1" : "0"}${stdout.slice(1)}` : stdout);
 
   await mkdir(fixture.binDir, { recursive: true });
   await mkdir(join(fixture.skillDir, "decisionator"), { recursive: true });
