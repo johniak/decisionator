@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement to Decisionator
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What decision workflow problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful solution and its user experience.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches or workarounds did you consider?
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Human decision safety
+      options:
+        - label: The proposal keeps every answer local until the human explicitly sends a discussion or confirms the batch.
+          required: true
