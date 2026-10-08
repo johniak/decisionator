@@ -413,6 +413,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
         open={confirmOpen}
         document={document}
         documentVersion={session.documentVersion}
+        attachmentDirectory={session.attachmentDirectory}
         draft={draft}
         agentPending={session.agentPending}
         sending={sending}

@@ -3,8 +3,10 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { ZodError } from "zod";
 import { InvalidDocumentError } from "../domain/decision";
+import { maxImageBytes } from "../domain/images";
 import { InvalidDecisionError, StaleDocumentError } from "../domain/protocol";
 import type { AssetStore } from "./assets";
+import { InvalidAttachmentError } from "./attachments";
 import {
   AgentBusyError,
   ClosedSessionError,
@@ -148,6 +150,13 @@ export function createApp({
 
   app.get("/api/session", (context) => context.json(session.snapshot()));
 
+  app.post("/api/attachments", async (context) => {
+    if (Number(context.req.header("content-length") ?? 0) > maxImageBytes) {
+      throw new InvalidAttachmentError("Images can be at most 15 MB.");
+    }
+    return context.json(session.uploadAttachment(new Uint8Array(await context.req.arrayBuffer())));
+  });
+
   app.post("/api/discussion", async (context) => {
     session.requestDiscussion(await readJson(context));
     return context.json({ status: "sent", session: session.snapshot() });
@@ -169,6 +178,7 @@ export function createApp({
       error instanceof InvalidDocumentError
       || error instanceof InvalidDecisionError
       || error instanceof InvalidRequestError
+      || error instanceof InvalidAttachmentError
     ) {
       return context.json({ error: error.message }, 400);
     }

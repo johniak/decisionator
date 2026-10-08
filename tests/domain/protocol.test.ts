@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { parseDecisionDocument } from "../../src/domain/decision";
+import { parseDecisionDocument, type DecisionDocument } from "../../src/domain/decision";
+import { attachmentFileName } from "../../src/domain/images";
 import {
   buildConfirmedResult,
+  discussionRequestSchema,
   InvalidDecisionError,
   StaleDocumentError,
+  type AttachmentLocator,
   type ConfirmRequest,
 } from "../../src/domain/protocol";
 import { decisionDocument, decisionInput } from "../fixtures";
+
+const locate: AttachmentLocator = ({ id, type }) => `/state/checkout-redesign/attachments/${attachmentFileName(id, type)}`;
+const screenshot = { id: "a".repeat(64), type: "image/png" as const, name: "Screenshot 2026-10-08.png" };
+const photo = { id: "b".repeat(64), type: "image/jpeg" as const, name: "phone.jpg" };
+
+function confirmResult(document: DecisionDocument, version: number, input: ConfirmRequest) {
+  return buildConfirmedResult(document, version, input, locate);
+}
 
 function request(overrides: Partial<ConfirmRequest> = {}): ConfirmRequest {
   return {
@@ -28,7 +39,7 @@ function request(overrides: Partial<ConfirmRequest> = {}): ConfirmRequest {
 
 describe("confirmed result", () => {
   it("returns every answer, comment, assumption, and the global comment", () => {
-    const result = buildConfirmedResult(decisionDocument(), 1, request());
+    const result = confirmResult(decisionDocument(), 1, request());
 
     expect(result).toEqual({
       status: "confirmed",
@@ -47,6 +58,7 @@ describe("confirmed result", () => {
             text: null,
             comment: "Keep the address step short.",
             skippedUsingRecommendation: false,
+            attachments: [],
             thread: { messages: [] },
           },
           {
@@ -60,6 +72,7 @@ describe("confirmed result", () => {
             text: null,
             comment: null,
             skippedUsingRecommendation: false,
+            attachments: [],
             thread: { messages: [] },
           },
           {
@@ -73,6 +86,7 @@ describe("confirmed result", () => {
             text: "Thanks — your order is on its way",
             comment: null,
             skippedUsingRecommendation: false,
+            attachments: [],
             thread: { messages: [] },
           },
         ],
@@ -86,12 +100,13 @@ describe("confirmed result", () => {
           },
         ],
         globalComment: "Ship behind a flag.",
+        globalAttachments: [],
       },
     });
   });
 
   it("records a skipped group as adopting its recommendation", () => {
-    const result = buildConfirmedResult(decisionDocument(), 1, request({
+    const result = confirmResult(decisionDocument(), 1, request({
       groups: [
         { groupId: "layout", skipped: true },
         { groupId: "notifications", skipped: true },
@@ -112,7 +127,7 @@ describe("confirmed result", () => {
   });
 
   it("keeps the option order of the document for multi-select answers", () => {
-    const result = buildConfirmedResult(decisionDocument(), 1, request({
+    const result = confirmResult(decisionDocument(), 1, request({
       groups: [
         { groupId: "layout", selectedOptionIds: ["one-page"] },
         { groupId: "notifications", selectedOptionIds: ["push", "email"] },
@@ -124,7 +139,7 @@ describe("confirmed result", () => {
   });
 
   it("treats an assumption without an answer as accepted", () => {
-    const result = buildConfirmedResult(decisionDocument(), 1, request({ assumptions: [] }));
+    const result = confirmResult(decisionDocument(), 1, request({ assumptions: [] }));
 
     expect(result.answers.assumptions.every((assumption) => assumption.accepted)).toBe(true);
   });
@@ -140,7 +155,7 @@ describe("confirmed result", () => {
         ],
       },
     } as never;
-    const result = buildConfirmedResult(parseDecisionDocument(input), 1, request({
+    const result = confirmResult(parseDecisionDocument(input), 1, request({
       groups: [
         { groupId: "layout", selectedOptionIds: ["steps"], dismissalReason: "Answered." },
         { groupId: "notifications", selectedOptionIds: ["email"] },
@@ -188,16 +203,104 @@ describe("confirmed result", () => {
       groups: [{ groupId: "layout", selectedOptionIds: ["steps"], dismissalReason: "No." }, ...request().groups!.slice(1)],
     }, "no discussion to dismiss"],
   ])("rejects %s", (_name, overrides, message) => {
-    expect(() => buildConfirmedResult(decisionDocument(), 1, request(overrides as Partial<ConfirmRequest>)))
+    expect(() => confirmResult(decisionDocument(), 1, request(overrides as Partial<ConfirmRequest>)))
       .toThrow(new RegExp(message));
   });
 
   it("requires an explicit confirmation flag", () => {
-    expect(() => buildConfirmedResult(decisionDocument(), 1, { ...request(), confirmed: false } as never))
+    expect(() => confirmResult(decisionDocument(), 1, { ...request(), confirmed: false } as never))
       .toThrow(InvalidDecisionError);
   });
 
   it("rejects a confirmation of an outdated version", () => {
-    expect(() => buildConfirmedResult(decisionDocument(), 2, request())).toThrow(StaleDocumentError);
+    expect(() => confirmResult(decisionDocument(), 2, request())).toThrow(StaleDocumentError);
+  });
+
+  it("returns attached images with their field and the file path the agent receives", () => {
+    const result = confirmResult(decisionDocument(), 1, request({
+      groups: [
+        { groupId: "layout", selectedOptionIds: ["steps"], comment: "See the overlap.", attachments: [{ field: "comment", ...screenshot }] },
+        { groupId: "notifications", selectedOptionIds: ["email"], attachments: [{ field: "otherText", ...photo }] },
+        { groupId: "copy", attachments: [{ field: "text", ...screenshot }, { field: "text", ...photo }] },
+      ],
+      globalAttachments: [photo],
+    }));
+
+    const [layout, notifications, copy] = result.answers.groups;
+    expect(layout?.attachments).toEqual([{
+      field: "comment",
+      path: `/state/checkout-redesign/attachments/${"a".repeat(64)}.png`,
+      type: "image/png",
+      name: "Screenshot 2026-10-08.png",
+    }]);
+    expect(notifications).toMatchObject({ status: "answered", otherText: null, attachments: [{ field: "otherText", type: "image/jpeg" }] });
+    expect(copy).toMatchObject({ status: "answered", text: null });
+    expect(copy?.attachments.map(({ path }) => path)).toEqual([
+      `/state/checkout-redesign/attachments/${"a".repeat(64)}.png`,
+      `/state/checkout-redesign/attachments/${"b".repeat(64)}.jpg`,
+    ]);
+    expect(result.answers.globalAttachments).toEqual([
+      { path: `/state/checkout-redesign/attachments/${"b".repeat(64)}.jpg`, type: "image/jpeg", name: "phone.jpg" },
+    ]);
+  });
+
+  it("keeps comment images on a skipped group", () => {
+    const result = confirmResult(decisionDocument(), 1, request({
+      groups: [
+        { groupId: "layout", skipped: true, attachments: [{ field: "comment", ...screenshot }] },
+        ...request().groups!.slice(1),
+      ],
+    }));
+
+    expect(result.answers.groups[0]).toMatchObject({ status: "skipped", attachments: [{ field: "comment" }] });
+  });
+
+  const elevenImages = Array.from({ length: 11 }, (_, index) => ({
+    field: "comment" as const,
+    id: index.toString(16).padStart(64, "0"),
+    type: "image/png" as const,
+    name: `shot-${index}.png`,
+  }));
+
+  it.each([
+    ["an answer image on a choice group", {
+      groups: [{ groupId: "layout", selectedOptionIds: ["steps"], attachments: [{ field: "text", ...screenshot }] }, ...request().groups!.slice(1)],
+    }, "not a text question"],
+    ["an Other image where Other is not allowed", {
+      groups: [{ groupId: "layout", selectedOptionIds: ["steps"], attachments: [{ field: "otherText", ...screenshot }] }, ...request().groups!.slice(1)],
+    }, "does not accept"],
+    ["an answer image on a skipped group", {
+      groups: [...request().groups!.slice(0, 2), { groupId: "copy", skipped: true, attachments: [{ field: "text", ...screenshot }] }],
+    }, "cannot also contain"],
+    ["more than ten images in one field", {
+      groups: [{ groupId: "layout", selectedOptionIds: ["steps"], attachments: elevenImages }, ...request().groups!.slice(1)],
+    }, "more than 10 images"],
+    ["the same image twice in one field", {
+      groups: [{
+        groupId: "layout",
+        selectedOptionIds: ["steps"],
+        attachments: [{ field: "comment", ...screenshot }, { field: "comment", ...screenshot }],
+      }, ...request().groups!.slice(1)],
+    }, "same image twice"],
+    ["the same image twice in the final comment", { globalAttachments: [photo, photo] }, "attached twice"],
+    ["an attachment ID that is not a hash", { globalAttachments: [{ ...photo, id: "../../etc/passwd" }] }, "SHA-256"],
+    ["an SVG attachment", { globalAttachments: [{ ...photo, type: "image/svg+xml" }] }, "globalAttachments"],
+    ["an attachment name with a line break", { globalAttachments: [{ ...photo, name: "a\nb" }] }, "one line"],
+  ])("rejects %s", (_name, overrides, message) => {
+    expect(() => confirmResult(decisionDocument(), 1, request(overrides as Partial<ConfirmRequest>)))
+      .toThrow(new RegExp(message));
+  });
+});
+
+describe("discussion request", () => {
+  it("accepts images with a message and defaults to none", () => {
+    expect(discussionRequestSchema.parse({ items: [{ groupId: "layout", message: "See this." }] }).items[0]?.attachments).toEqual([]);
+    expect(discussionRequestSchema.parse({ items: [{ groupId: "layout", message: "See this.", attachments: [screenshot] }] }).items[0]?.attachments)
+      .toEqual([screenshot]);
+  });
+
+  it("rejects the same image twice in one message", () => {
+    expect(discussionRequestSchema.safeParse({ items: [{ groupId: "layout", message: "Two", attachments: [screenshot, screenshot] }] }).success)
+      .toBe(false);
   });
 });

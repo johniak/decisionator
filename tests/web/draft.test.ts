@@ -122,7 +122,7 @@ describe("draft editing", () => {
       assumptions: [{ id: "currency", accepted: true }, { id: "guest", accepted: false, objection: "No guests" }],
       globalComment: "Done",
     });
-    expect(buildConfirmedResult(document, 1, request).answers.groups.map(({ status }) => status))
+    expect(buildConfirmedResult(document, 1, request, () => "/unused").answers.groups.map(({ status }) => status))
       .toEqual(["answered", "answered", "answered"]);
   });
 

@@ -3,25 +3,30 @@ import {
   parseDecisionDocument,
   validateAgentDocument,
   InvalidDocumentError,
+  type Attachment,
   type DecisionDocument,
   type DecisionGroup,
   type VersionReference,
 } from "../domain/decision";
 import {
   buildConfirmedResult,
+  confirmRequestSchema,
   discussionRequestSchema,
+  toAttachment,
+  type AttachmentLocator,
   type CancelledResult,
   type ConfirmRequest,
   type ConfirmedResult,
 } from "../domain/protocol";
 import type { AssetStore } from "./assets";
+import type { AttachmentStore } from "./attachments";
 
 export type DiscussionResult = {
   status: "discussion";
   sessionId: string;
   documentVersion: number;
   groupIds: string[];
-  messages: { groupId: string; messageId: string; body: string }[];
+  messages: { groupId: string; messageId: string; body: string; attachments?: Attachment[] }[];
 };
 
 export type SessionResult = DiscussionResult | ConfirmedResult | CancelledResult;
@@ -60,6 +65,7 @@ export class DecisionSession {
     document: DecisionDocument,
     assets: Record<string, string>,
     private readonly assetStore: AssetStore,
+    private readonly attachments: AttachmentStore,
     readonly live = false,
     private readonly now: () => Date = () => new Date(),
   ) {
@@ -103,6 +109,7 @@ export class DecisionSession {
       agentPending: Boolean(this.activeAgentRequest || this.pendingAgentRequests.length),
       pendingGroupIds: [this.activeAgentRequest, ...this.pendingAgentRequests]
         .flatMap((request) => request?.groupIds ?? []),
+      attachmentDirectory: this.attachments.directory,
       result: this.finalResult && this.finalResult.status !== "discussion" ? this.finalResult : null,
     };
   }
@@ -122,10 +129,16 @@ export class DecisionSession {
         throw new InvalidRequestError(`The discussion in group ${groupId} is already waiting for the AI agent.`);
       }
     }
-    const messages = parsed.data.items.map(({ groupId, message }) => ({
+    const files = this.attachments.persist(parsed.data.items.flatMap(({ attachments }) => attachments));
+    // The open browser shows sent images from the current version's assets.
+    const assets = this.revisions.at(-1)!.assets;
+    for (const file of files) assets[file.path] = this.assetStore.add(file.bytes, file.type);
+    const messages = parsed.data.items.map(({ groupId, message, attachments }) => ({
       groupId,
       messageId: `u-${crypto.randomUUID()}`,
       body: message,
+      // Left out when empty: message history is compared exactly between rounds.
+      ...(attachments.length > 0 ? { attachments: attachments.map((reference) => toAttachment(reference, this.locate)) } : {}),
     }));
     const added = new Map(messages.map((message) => [message.groupId, message]));
     this.current = {
@@ -137,7 +150,12 @@ export class DecisionSession {
           ...group,
           thread: {
             ...group.thread,
-            messages: [...group.thread.messages, { id: message.messageId, author: "user", body: message.body }],
+            messages: [...group.thread.messages, {
+              id: message.messageId,
+              author: "user",
+              body: message.body,
+              ...(message.attachments ? { attachments: message.attachments } : {}),
+            }],
           },
         };
       }),
@@ -199,10 +217,19 @@ export class DecisionSession {
 
   confirm(input: unknown): ConfirmedResult {
     this.assertOpen();
-    const result = buildConfirmedResult(this.current, this.documentVersion, input as ConfirmRequest);
+    const result = buildConfirmedResult(this.current, this.documentVersion, input as ConfirmRequest, this.locate);
+    const request = confirmRequestSchema.parse(input);
+    this.attachments.persist([...request.groups.flatMap(({ attachments }) => attachments), ...request.globalAttachments]);
     this.complete(result);
     return result;
   }
+
+  uploadAttachment(bytes: Uint8Array) {
+    this.assertOpen();
+    return this.attachments.add(bytes);
+  }
+
+  private readonly locate: AttachmentLocator = (reference) => this.attachments.pathFor(reference);
 
   cancel(): CancelledResult {
     this.assertOpen();

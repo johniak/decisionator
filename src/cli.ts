@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import packageJson from "../package.json" with { type: "json" };
 import favicon from "../web/favicon.svg" with { type: "text" };
@@ -6,7 +7,9 @@ import { InvalidDocumentError, parseDecisionDocument, sessionIdSchema, type Deci
 import { BunCommandRunner, openBrowser } from "./platform/command";
 import { createApp, ConnectionTracker } from "./server/app";
 import { AssetStore } from "./server/assets";
+import { AttachmentStore } from "./server/attachments";
 import {
+  liveStateDirectory,
   MissingLiveSessionError,
   readLiveState,
   removeLiveState,
@@ -78,7 +81,8 @@ async function main(): Promise<void> {
   const previous = values.live ? await inspectPreviousLiveSession(sessionId) : undefined;
   const document = await readDocument(values.file, sessionId);
   const assets = new AssetStore();
-  const session = new DecisionSession(document, await assets.ingest(document), assets, values.live);
+  const attachments = new AttachmentStore(join(liveStateDirectory(), sessionId, "attachments"));
+  const session = new DecisionSession(document, await assets.ingest(document), assets, attachments, values.live);
   const token = previous?.token ?? crypto.randomUUID();
   const connections = new ConnectionTracker();
   const app = createApp({ html: appHtml, favicon, token, session, assets, connections });
@@ -150,7 +154,16 @@ async function waitForLiveRequest(sessionId: string): Promise<void> {
   await assertLiveServerReachable(state);
   const result = await waitForAgentRequest(state);
   process.stdout.write(`${JSON.stringify(result)}\n`);
-  if (isFinalResult(result)) await removeLiveState(sessionId);
+  if (isFinalResult(result)) {
+    // The server saves the final result to the state file before it stops; remove it only afterwards.
+    await waitForServerExit(state);
+    await removeLiveState(sessionId);
+  }
+}
+
+async function waitForServerExit(state: LiveSessionState, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && await isReachable(state)) await Bun.sleep(50);
 }
 
 // A human can take longer than Bun's five-minute fetch idle timeout, so the wait disables it,

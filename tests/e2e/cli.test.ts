@@ -1,14 +1,14 @@
 // @vitest-environment node
 
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { connect, createServer, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { readLiveState, writeLiveState } from "../../src/server/live-state";
-import { decisionInput, sessionId } from "../fixtures";
+import { decisionInput, pngBytes, sessionId } from "../fixtures";
 
 const run = promisify(execFile);
 const children = new Set<ChildProcess>();
@@ -265,6 +265,34 @@ describe("Decisionator CLI", () => {
 
     expect(JSON.parse((await waiting).stdout)).toMatchObject({ status: "discussion", groupIds: ["layout"] });
     proxy.close();
+  }, 30_000);
+
+  it("hands confirmed images to the agent as private files in the state directory", async () => {
+    const { env, file, root, cli } = await workspace();
+    const live = start(env, [sessionId, "--file", file, "--live", "--no-open"]);
+    const { baseUrl, token } = await live.ready;
+    const bytes = pngBytes(5);
+
+    const upload = await (await api(baseUrl, token, "/api/attachments", {
+      method: "POST",
+      body: bytes,
+      headers: { "content-type": "image/png" },
+    })).json() as { id: string };
+    const waiting = cli(["wait", sessionId]);
+    const request = confirmation(1);
+    request.groups[2] = { groupId: "copy", text: "", attachments: [{ field: "text", id: upload.id, type: "image/png", name: "headline.png" }] } as never;
+    expect((await api(baseUrl, token, "/api/confirm", { method: "POST", body: JSON.stringify(request) })).status).toBe(200);
+
+    const result = JSON.parse((await waiting).stdout);
+    const path = join(root, "state", sessionId, "attachments", `${upload.id}.png`);
+    expect(result.answers.groups[2]).toMatchObject({
+      status: "answered",
+      text: null,
+      attachments: [{ field: "text", path, type: "image/png", name: "headline.png" }],
+    });
+    expect(new Uint8Array(await readFile(path))).toEqual(bytes);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(await live.exited).toBe(0);
   }, 30_000);
 
   it("keeps the final result for an agent that waits after the session closed", async () => {

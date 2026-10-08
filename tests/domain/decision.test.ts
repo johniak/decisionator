@@ -146,6 +146,36 @@ describe("decision document schema", () => {
     expect(() => validateAgentDocument(waiting)).toThrow(InvalidDocumentError);
   });
 
+  it("keeps attachments on the human's messages and refuses them on agent replies", () => {
+    const image = { path: "/state/attachments/shot.png", type: "image/png", name: "shot.png" };
+    const human = parseDecisionDocument(withGroup({
+      thread: {
+        messages: [
+          { id: "u1", author: "user", body: "See this.", attachments: [image] },
+          { id: "a1", author: "agent", body: "I see the overlap." },
+        ],
+      },
+    }));
+    expect(human.groups[0]?.thread.messages[0]?.attachments).toEqual([image]);
+    expect(human.groups[0]?.thread.messages[1]).not.toHaveProperty("attachments");
+    expect(() => validateAgentDocument(human)).not.toThrow();
+
+    const agent = parseDecisionDocument(withGroup({
+      thread: {
+        messages: [
+          { id: "u1", author: "user", body: "Show me." },
+          { id: "a1", author: "agent", body: "Here.", attachments: [image] },
+        ],
+      },
+    }));
+    expect(() => validateAgentDocument(agent)).toThrow("cannot carry attachments");
+
+    const relative = withGroup({ thread: { messages: [{ id: "u1", author: "user", body: "x", attachments: [{ ...image, path: "shot.png" }] }] } });
+    expect(issues(relative)).toContain("Paths must be absolute");
+    const svg = withGroup({ thread: { messages: [{ id: "u1", author: "user", body: "x", attachments: [{ ...image, type: "image/svg+xml" }] }] } });
+    expect(issues(svg)).not.toBe("");
+  });
+
   it("formats validation errors for the agent", () => {
     expect(() => parseDecisionDocument({ ...decisionInput(), title: "" })).toThrow(/title/);
   });
@@ -205,6 +235,13 @@ describe("mockups", () => {
       right: { kind: "image", path: "/tmp/a.png", alt: "A again" },
     } as never;
 
-    expect(imagePaths(parseDecisionDocument(input))).toEqual(["/tmp/a.png", "/tmp/b.png"]);
+    input.groups[1]!.thread = {
+      messages: [
+        { id: "u1", author: "user", body: "See", attachments: [{ path: "/tmp/c.png", type: "image/png", name: "c.png" }] },
+        { id: "a1", author: "agent", body: "Seen." },
+      ],
+    } as never;
+
+    expect(imagePaths(parseDecisionDocument(input))).toEqual(["/tmp/a.png", "/tmp/b.png", "/tmp/c.png"]);
   });
 });

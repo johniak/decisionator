@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { ArrowLeft, Braces, Check, CheckCircle2, Hand, LoaderCircle, MessageSquareText, Send, SkipForward, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { DecisionDocument } from "../../src/domain/decision";
+import { attachmentPath, type AttachmentType } from "../../src/domain/images";
 import { buildConfirmedResult, type ConfirmRequest, type ConfirmedResult } from "../../src/domain/protocol";
 import { toConfirmRequest, unansweredGroups, type Draft } from "../draft";
 import { languageTag } from "../language";
@@ -11,6 +12,7 @@ type Props = {
   open: boolean;
   document: DecisionDocument;
   documentVersion: number;
+  attachmentDirectory: string;
   draft: Draft;
   agentPending: boolean;
   sending: boolean;
@@ -23,10 +25,16 @@ type Props = {
 
 type Preview = { request: ConfirmRequest; result: ConfirmedResult } | { error: string };
 
-export function buildPreview(document: DecisionDocument, documentVersion: number, draft: Draft): Preview {
+export function buildPreview(
+  document: DecisionDocument,
+  documentVersion: number,
+  draft: Draft,
+  attachmentDirectory: string,
+): Preview {
   const request = toConfirmRequest(document, documentVersion, draft);
   try {
-    return { request, result: buildConfirmedResult(document, documentVersion, request) };
+    const locate = (reference: { id: string; type: AttachmentType }) => attachmentPath(attachmentDirectory, reference);
+    return { request, result: buildConfirmedResult(document, documentVersion, request, locate) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "These decisions cannot be confirmed yet." };
   }
@@ -36,6 +44,7 @@ export function ConfirmDialog({
   open,
   document,
   documentVersion,
+  attachmentDirectory,
   draft,
   agentPending,
   sending,
@@ -49,8 +58,8 @@ export function ConfirmDialog({
   const [tab, setTab] = useState<"summary" | "json">("summary");
   const unanswered = unansweredGroups(document, draft);
   const preview = useMemo(
-    () => (unanswered.length === 0 ? buildPreview(document, documentVersion, draft) : null),
-    [document, documentVersion, draft, unanswered.length],
+    () => (unanswered.length === 0 ? buildPreview(document, documentVersion, draft, attachmentDirectory) : null),
+    [document, documentVersion, draft, attachmentDirectory, unanswered.length],
   );
 
   useEffect(() => {

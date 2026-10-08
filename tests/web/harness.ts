@@ -3,7 +3,7 @@ import type { DecisionDocument } from "../../src/domain/decision";
 import { createApp } from "../../src/server/app";
 import { AssetStore } from "../../src/server/assets";
 import { DecisionSession } from "../../src/server/session";
-import { decisionDocument } from "../fixtures";
+import { attachmentStore, decisionDocument } from "../fixtures";
 
 export const token = "test-token";
 
@@ -15,7 +15,8 @@ type Listener = (event: MessageEvent) => void;
  */
 export async function startHarness(document: DecisionDocument = decisionDocument(), live = true) {
   const assets = new AssetStore();
-  const session = new DecisionSession(document, await assets.ingest(document), assets, live);
+  const attachments = attachmentStore();
+  const session = new DecisionSession(document, await assets.ingest(document), assets, attachments, live);
   const app = createApp({ html: "<html></html>", favicon: "<svg></svg>", token, session, assets });
   const requests: { method: string; path: string; body: unknown }[] = [];
 

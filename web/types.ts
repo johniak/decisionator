@@ -11,6 +11,7 @@ export type SessionSnapshot = {
   revisions: DocumentRevision[];
   agentPending: boolean;
   pendingGroupIds: string[];
+  attachmentDirectory: string;
   result: ConfirmedResult | CancelledResult | null;
 };
 

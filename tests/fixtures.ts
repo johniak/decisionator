@@ -1,5 +1,9 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { z } from "zod";
 import { decisionDocumentSchema, parseDecisionDocument, type DecisionDocument } from "../src/domain/decision";
+import { AttachmentStore } from "../src/server/attachments";
 
 export type DecisionInput = z.input<typeof decisionDocumentSchema>;
 
@@ -65,4 +69,14 @@ export function decisionInput(): DecisionInput {
 
 export function decisionDocument(): DecisionDocument {
   return parseDecisionDocument(decisionInput());
+}
+
+/** Attachments written by a test session go to a fresh temporary directory. */
+export function attachmentStore(): AttachmentStore {
+  return new AttachmentStore(join(mkdtempSync(join(tmpdir(), "decisionator-attachments-")), sessionId, "attachments"));
+}
+
+/** A tiny valid PNG, distinct per seed so tests can attach several different images. */
+export function pngBytes(seed = 0): Uint8Array<ArrayBuffer> {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, seed]);
 }

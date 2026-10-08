@@ -1,14 +1,15 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDecisionDocument, type DecisionDocument } from "../../src/domain/decision";
 import { StaleDocumentError } from "../../src/domain/protocol";
 import { AssetStore } from "../../src/server/assets";
 import { AgentBusyError, ClosedSessionError, DecisionSession, InvalidRequestError } from "../../src/server/session";
-import { decisionDocument } from "../fixtures";
+import { attachmentStore, decisionDocument, pngBytes } from "../fixtures";
 
 const fixedNow = () => new Date("2026-10-08T10:00:00.000Z");
 
 function liveSession(document = decisionDocument()) {
-  return new DecisionSession(document, {}, new AssetStore(), true, fixedNow);
+  return new DecisionSession(document, {}, new AssetStore(), attachmentStore(), true, fixedNow);
 }
 
 function confirmation(documentVersion = 1) {
@@ -61,6 +62,46 @@ describe("decision session", () => {
     ]);
     expect(JSON.stringify(request)).not.toContain("selectedOptionIds");
     expect(session.snapshot()).toMatchObject({ agentPending: true, pendingGroupIds: ["layout"] });
+  });
+
+  it("writes the images sent with a discussion and shows them in the thread", async () => {
+    const session = liveSession();
+    const bytes = pngBytes(7);
+    const upload = session.uploadAttachment(bytes);
+    session.requestDiscussion({
+      items: [{ groupId: "layout", message: "See the overlap.", attachments: [{ id: upload.id, type: "image/png", name: "overlap.png" }] }],
+    });
+
+    const request = await session.waitForAgentRequest();
+    if (request.status !== "discussion") throw new Error("Expected a discussion");
+    const attachment = { path: `${session.snapshot().attachmentDirectory}/${upload.id}.png`, type: "image/png", name: "overlap.png" };
+    expect(request.messages[0]?.attachments).toEqual([attachment]);
+    expect(request.document.groups[0]?.thread.messages[0]?.attachments).toEqual([attachment]);
+    expect(new Uint8Array(readFileSync(attachment.path))).toEqual(bytes);
+    expect(session.assetIdForPath(1, attachment.path)).toBe(upload.id);
+
+    await expect(session.respond(reply(request.document, "layout", "The total moves above the button.", (next) => {
+      delete next.groups[0]!.thread.messages[0]!.attachments;
+    }))).rejects.toThrow("cannot edit or drop discussion messages");
+    await session.respond(reply(request.document, "layout", "The total moves above the button."));
+    expect(session.assetIdForPath(2, attachment.path)).toBe(upload.id);
+  });
+
+  it("leaves the attachments key out of a message without images", async () => {
+    const session = liveSession();
+    session.requestDiscussion({ items: [{ groupId: "layout", message: "Why?" }] });
+
+    expect(session.document.groups[0]?.thread.messages[0]).not.toHaveProperty("attachments");
+  });
+
+  it("refuses a discussion that references an image that was never uploaded", () => {
+    const session = liveSession();
+
+    expect(() => session.requestDiscussion({
+      items: [{ groupId: "layout", message: "See this.", attachments: [{ id: "e".repeat(64), type: "image/png", name: "lost.png" }] }],
+    })).toThrow("lost.png was not uploaded");
+    expect(session.document.groups[0]?.thread.messages).toEqual([]);
+    expect(session.snapshot().agentPending).toBe(false);
   });
 
   it("returns the same unanswered request when the agent waits again", async () => {
@@ -217,6 +258,40 @@ describe("decision session", () => {
     expect(() => session.cancel()).toThrow(ClosedSessionError);
   });
 
+  it("writes confirmed images and returns their paths", async () => {
+    const session = liveSession();
+    const comment = session.uploadAttachment(pngBytes(8));
+    const final = session.uploadAttachment(pngBytes(9));
+
+    const result = session.confirm({
+      ...confirmation(),
+      groups: [
+        { groupId: "layout", selectedOptionIds: ["steps"], attachments: [{ field: "comment", id: comment.id, type: "image/png", name: "a.png" }] },
+        { groupId: "notifications", skipped: true },
+        { groupId: "copy", text: "Thanks" },
+      ],
+      globalAttachments: [{ id: final.id, type: "image/png", name: "b.png" }],
+    });
+
+    const directory = session.snapshot().attachmentDirectory;
+    expect(result.answers.groups[0]?.attachments).toEqual([
+      { field: "comment", path: `${directory}/${comment.id}.png`, type: "image/png", name: "a.png" },
+    ]);
+    expect(result.answers.globalAttachments).toEqual([{ path: `${directory}/${final.id}.png`, type: "image/png", name: "b.png" }]);
+    expect(existsSync(`${directory}/${comment.id}.png`)).toBe(true);
+    expect(existsSync(`${directory}/${final.id}.png`)).toBe(true);
+  });
+
+  it("stays open when a confirmed image was never uploaded", () => {
+    const session = liveSession();
+
+    expect(() => session.confirm({
+      ...confirmation(),
+      globalAttachments: [{ id: "d".repeat(64), type: "image/png", name: "gone.png" }],
+    })).toThrow("gone.png was not uploaded");
+    expect(session.isOpen).toBe(true);
+  });
+
   it("rejects a confirmation made against an older version", async () => {
     const session = liveSession();
     session.requestDiscussion({ items: [{ groupId: "layout", message: "Why?" }] });
@@ -246,7 +321,7 @@ describe("decision session", () => {
   });
 
   it("ends a non-live session with the discussion and its document", async () => {
-    const session = new DecisionSession(decisionDocument(), {}, new AssetStore(), false, fixedNow);
+    const session = new DecisionSession(decisionDocument(), {}, new AssetStore(), attachmentStore(), false, fixedNow);
     session.requestDiscussion({ items: [{ groupId: "layout", message: "Why?" }] });
 
     const result = await session.waitForResult();

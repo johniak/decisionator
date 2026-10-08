@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attachmentTypes, maxAttachmentsPerField } from "./images";
 
 export const documentVersion = 1;
 export const groupModes = ["single", "multi", "text"] as const;
@@ -183,10 +184,22 @@ const splitMockupSchema = z.strictObject({
 export const mockupSchema = z.discriminatedUnion("kind", [...leafMockupSchemas, splitMockupSchema]);
 export const mockupKinds = mockupSchema.options.map((option) => option.shape.kind.value);
 
+const absolutePathSchema = z.string().trim().min(1).max(4_096)
+  .refine((path) => path.startsWith("/"), { message: "Paths must be absolute." });
+
+/** An image the human attached; Decisionator writes the file and fills in the path. */
+export const attachmentSchema = z.strictObject({
+  path: absolutePathSchema,
+  type: z.enum(attachmentTypes),
+  name: oneLine(200),
+});
+
 export const threadMessageSchema = z.strictObject({
   id: idSchema,
   author: z.enum(["user", "agent"]),
   body: z.string().trim().min(1).max(8_000),
+  // Optional, never defaulted: message history is compared exactly between rounds.
+  attachments: z.array(attachmentSchema).min(1).max(maxAttachmentsPerField).optional(),
 });
 
 export const threadSchema = z.strictObject({
@@ -327,6 +340,7 @@ export type LeafMockup = z.infer<typeof leafMockupSchema>;
 export type MockupKind = Mockup["kind"];
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadMessage = z.infer<typeof threadMessageSchema>;
+export type Attachment = z.infer<typeof attachmentSchema>;
 export type Assumption = z.infer<typeof assumptionSchema>;
 export type VersionReference = z.infer<typeof versionReferenceSchema>;
 export type GroupMode = (typeof groupModes)[number];
@@ -344,6 +358,11 @@ export function validateAgentDocument(document: DecisionDocument): void {
   for (const group of document.groups) {
     if (group.thread.dismissed) {
       throw new InvalidDocumentError(`Only the user can dismiss the discussion in group ${group.id}.`);
+    }
+    if (group.thread.messages.some((message) => message.author === "agent" && message.attachments)) {
+      throw new InvalidDocumentError(
+        `Agent replies in group ${group.id} cannot carry attachments. Show images with an image mockup instead.`,
+      );
     }
     if (group.thread.messages.at(-1)?.author === "user") {
       throw new InvalidDocumentError(
@@ -366,6 +385,9 @@ export function imagePaths(document: DecisionDocument): string[] {
   for (const group of document.groups) {
     visit(group.mockup);
     for (const option of group.options) visit(option.mockup);
+    for (const message of group.thread.messages) {
+      for (const attachment of message.attachments ?? []) paths.add(attachment.path);
+    }
   }
   return [...paths];
 }

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { imagePaths, InvalidDocumentError, type DecisionDocument } from "../domain/decision";
+import { detectImageType, maxImageBytes } from "../domain/images";
 
-export const maxImageBytes = 15 * 1024 * 1024;
+export { detectImageType, maxImageBytes };
 const maxDocumentImageBytes = 100 * 1024 * 1024;
 
 type StoredAsset = { bytes: Uint8Array; contentType: string };
@@ -21,15 +22,23 @@ export class AssetStore {
     let total = 0;
     for (const path of imagePaths(document)) {
       const asset = await readImage(path);
-      total += asset.bytes.byteLength;
+      const id = createHash("sha256").update(asset.bytes).digest("hex");
+      // Images held from earlier rounds, such as the human's attachments, cost no new memory.
+      if (!this.assets.has(id)) total += asset.bytes.byteLength;
       if (total > maxDocumentImageBytes) {
         throw new InvalidDocumentError("The images in one document may not exceed 100 MB in total.");
       }
-      const id = createHash("sha256").update(asset.bytes).digest("hex");
       loaded.push([path, id, asset]);
     }
     for (const [, id, asset] of loaded) this.assets.set(id, asset);
     return Object.fromEntries(loaded.map(([path, id]) => [path, id]));
+  }
+
+  /** Serves an image the human attached; it is already validated and written by the attachment store. */
+  add(bytes: Uint8Array, contentType: string): string {
+    const id = createHash("sha256").update(bytes).digest("hex");
+    this.assets.set(id, { bytes, contentType });
+    return id;
   }
 
   get(id: string): StoredAsset | undefined {
@@ -53,15 +62,4 @@ async function readImage(path: string): Promise<StoredAsset> {
     throw new InvalidDocumentError(`Unsupported image format (use PNG, JPEG, GIF, WebP, or SVG): ${path}`);
   }
   return { bytes, contentType };
-}
-
-export function detectImageType(bytes: Uint8Array): string | null {
-  const starts = (...signature: number[]) => signature.every((value, index) => bytes[index] === value);
-  if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
-  if (starts(0xff, 0xd8, 0xff)) return "image/jpeg";
-  if (starts(0x47, 0x49, 0x46, 0x38) && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) return "image/gif";
-  if (starts(0x52, 0x49, 0x46, 0x46) && String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP") return "image/webp";
-  const head = new TextDecoder().decode(bytes.subarray(0, 4_096)).replace(/^﻿/, "").trimStart();
-  if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(head)) return "image/svg+xml";
-  return null;
 }

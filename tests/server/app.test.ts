@@ -6,7 +6,7 @@ import { parseDecisionDocument } from "../../src/domain/decision";
 import { ConnectionTracker, contentSecurityPolicy, createApp } from "../../src/server/app";
 import { AssetStore, detectImageType } from "../../src/server/assets";
 import { DecisionSession } from "../../src/server/session";
-import { decisionInput } from "../fixtures";
+import { attachmentStore, decisionInput, pngBytes } from "../fixtures";
 
 const token = "secret-token";
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
@@ -16,7 +16,7 @@ async function setup(imagePath?: string) {
   if (imagePath) input.groups[0]!.mockup = { kind: "image", path: imagePath, alt: "Current checkout" } as never;
   const document = parseDecisionDocument(input);
   const assets = new AssetStore();
-  const session = new DecisionSession(document, await assets.ingest(document), assets, true);
+  const session = new DecisionSession(document, await assets.ingest(document), assets, attachmentStore(), true);
   const connections = new ConnectionTracker();
   const app = createApp({
     html: "<html><script type=\"module\">console.log(1)</script></html>",
@@ -73,6 +73,7 @@ describe("Decisionator HTTP server", () => {
     const { app } = await setup();
     for (const [path, method] of [
       ["/api/session", "GET"],
+      ["/api/attachments", "POST"],
       ["/api/discussion", "POST"],
       ["/api/agent/wait", "GET"],
       ["/api/agent/respond", "POST"],
@@ -93,6 +94,44 @@ describe("Decisionator HTTP server", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toMatchObject({ sessionId: "checkout-redesign", documentVersion: 1, live: true });
+  });
+
+  it("accepts image uploads and serves the images sent with a discussion", async () => {
+    const { call } = await setup();
+    const bytes = pngBytes(4);
+
+    const uploaded = await call("/api/attachments", { method: "POST", body: bytes, headers: { "content-type": "image/png" } });
+    expect(uploaded.status).toBe(200);
+    const { id } = await uploaded.json() as { id: string };
+    const rejected = await call("/api/attachments", { method: "POST", body: "<svg></svg>", headers: { "content-type": "image/svg+xml" } });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toEqual({ error: "Attach PNG, JPEG, GIF, or WebP images." });
+
+    const sent = await call("/api/discussion", {
+      method: "POST",
+      body: JSON.stringify({ items: [{ groupId: "layout", message: "See this.", attachments: [{ id, type: "image/png", name: "a.png" }] }] }),
+    });
+    expect(sent.status).toBe(200);
+    const snapshot = await (await call("/api/session")).json() as {
+      attachmentDirectory: string;
+      document: { groups: { thread: { messages: { attachments?: { path: string }[] }[] } }[] };
+      revisions: { assets: Record<string, string> }[];
+    };
+    const path = snapshot.document.groups[0]!.thread.messages[0]!.attachments![0]!.path;
+    expect(path).toBe(`${snapshot.attachmentDirectory}/${id}.png`);
+    const image = await call(`/api/assets/${snapshot.revisions[0]!.assets[path]}?token=${token}`);
+    expect(image.status).toBe(200);
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(bytes);
+  });
+
+  it("refuses an upload larger than 15 MB", async () => {
+    const { call } = await setup();
+    const body = new Uint8Array(15 * 1024 * 1024 + 1);
+    body.set(pngBytes());
+    const response = await call("/api/attachments", { method: "POST", body, headers: { "content-type": "image/png" } });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Images can be at most 15 MB." });
   });
 
   it("maps validation, conflict, and closed-session errors to HTTP status codes", async () => {
