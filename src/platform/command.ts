@@ -24,9 +24,12 @@ export class BunCommandRunner implements CommandRunner {
   }
 }
 
-export async function openBrowser(url: string, runner: CommandRunner): Promise<void> {
+export async function openBrowser(url: string, runner: CommandRunner, env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const platform = process.platform;
-  const [command, args] = platform === "darwin"
+  const preferred = env.BROWSER?.trim();
+  const [command, args] = preferred
+    ? [preferred, [url]]
+    : platform === "darwin"
     ? ["open", [url]]
     : platform === "win32"
       ? ["cmd", ["/c", "start", "", url]]

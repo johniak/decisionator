@@ -177,6 +177,8 @@ describe("mockups", () => {
     expect(mockupSchema.safeParse(table).error?.issues[0]?.message).toContain("has 1 cells");
     expect(mockupSchema.safeParse({ ...table, rows: [["A", true]], highlightColumn: 3 }).success).toBe(false);
     expect(mockupSchema.safeParse({ ...table, rows: [["A", true], ["B", null]], highlightColumn: 1 }).success).toBe(true);
+    expect(mockupSchema.safeParse({ ...table, columns: ["", "Cost"], rows: [["A", 1]] }).success).toBe(true);
+    expect(mockupSchema.safeParse({ ...table, columns: ["Two\nlines", "Cost"], rows: [["A", 1]] }).success).toBe(false);
   });
 
   it("validates palette colors, code, diffs, and stats", () => {

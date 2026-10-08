@@ -96,7 +96,9 @@ const tableCellSchema = z.union([z.string().max(1_000), z.number(), z.boolean(),
 
 const tableMockupSchema = z.strictObject({
   kind: z.literal("table"),
-  columns: z.array(oneLine(120)).min(1).max(12),
+  columns: z.array(z.string().trim().max(120).refine((value) => !/[\r\n]/.test(value), {
+    message: "Column headers must fit on one line.",
+  })).min(1).max(12),
   rows: z.array(z.array(tableCellSchema)).min(1).max(100),
   highlightColumn: z.int().min(0).max(11).optional(),
   caption,

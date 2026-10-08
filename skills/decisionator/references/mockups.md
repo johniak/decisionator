@@ -23,7 +23,7 @@ Every group and every option can carry one `mockup`. Prefer the structured kinds
 { "kind": "table", "columns": ["Capability", "Stripe", "Adyen"], "rows": [["BLIK", true, true], ["Monthly fee", "none", "€120"], ["Setup days", 4, 8]], "highlightColumn": 1 }
 ```
 
-Cells are strings (inline Markdown), numbers, `true` (✓), `false` (✗), or `null` (not applicable). Every row has one cell per column. `highlightColumn` (zero-based) marks the recommended column.
+Column headers may be empty, for example above a column of row labels. Cells are strings (inline Markdown), numbers, `true` (✓), `false` (✗), or `null` (not applicable). Every row has one cell per column. `highlightColumn` (zero-based) marks the recommended column.
 
 ## chart
 

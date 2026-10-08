@@ -28,8 +28,9 @@ async function workspace(document: unknown = decisionInput()) {
     await writeFile(join(fakeBin, command), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${openLog}"\n`);
     await chmod(join(fakeBin, command), 0o755);
   }
-  const env = {
-    ...process.env,
+  const { BROWSER: _browser, ...inherited } = process.env;
+  const env: NodeJS.ProcessEnv = {
+    ...inherited,
     DECISIONATOR_STATE_DIR: join(root, "state"),
     PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
   };
@@ -262,6 +263,18 @@ describe("Decisionator CLI", () => {
     expect(await second.ready).toEqual({ baseUrl, token });
     await expect.poll(opened, { timeout: 10_000 }).toBe(`${baseUrl}/#${token}\n`);
   }, 60_000);
+
+  it("opens the browser named by the BROWSER variable", async () => {
+    const { env, file, root } = await workspace();
+    const log = join(root, "browser.log");
+    const browser = join(root, "my-browser");
+    await writeFile(browser, `#!/bin/sh\nprintf '%s\\n' "$1" > "${log}"\n`);
+    await chmod(browser, 0o755);
+    const process = start({ ...env, BROWSER: browser }, [sessionId, "--file", file]);
+    const { baseUrl, token } = await process.ready;
+
+    await expect.poll(() => readFile(log, "utf8").catch(() => ""), { timeout: 10_000 }).toBe(`${baseUrl}/#${token}\n`);
+  }, 30_000);
 
   it("serves screenshots listed in the document and nothing else", async () => {
     const root = await mkdtemp(join(tmpdir(), "decisionator-e2e-images-"));

@@ -93,7 +93,7 @@ describe("Decisionator skill", () => {
     const skill = await readFile(skillFile, "utf8");
 
     expect(skill.match(/Only in Codex on macOS, never in Claude Code/g)).toHaveLength(1);
-    expect(skill).toContain("binding its loopback server or opening the browser");
+    expect(skill).toContain("binding its loopback server, writing its session state, or opening the browser");
     expect(skill).toContain("This approval does not answer any question");
   });
 });
