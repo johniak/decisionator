@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { execFile, spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
 import { chmod, cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,13 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
+
+// The scripts default to directories in the home directory, so every run gets an empty one
+// instead of the developer's real installation.
+process.env.HOME = mkdtempSync(join(tmpdir(), "decisionator-install-home-"));
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith("DECISIONATOR_")) delete process.env[name];
+}
 const configLine = (language: string) =>
   `Decision language configuration: write every decision screen and every agent reply in ${language}.`;
 

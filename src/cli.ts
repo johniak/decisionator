@@ -148,9 +148,25 @@ async function waitForLiveRequest(sessionId: string): Promise<void> {
     return;
   }
   await assertLiveServerReachable(state);
-  const result = await liveRequest(state, "/api/agent/wait", undefined, "wait");
+  const result = await waitForAgentRequest(state);
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (isFinalResult(result)) await removeLiveState(sessionId);
+}
+
+// A human can take longer than Bun's five-minute fetch idle timeout, so the wait disables it,
+// and a dropped wait is retried for as long as the session's server is running.
+async function waitForAgentRequest(state: LiveSessionState): Promise<unknown> {
+  for (;;) {
+    try {
+      return await liveRequest(state, "/api/agent/wait", { timeout: false }, "wait");
+    } catch (error) {
+      if (!(error instanceof DroppedConnectionError)) throw error;
+      const latest = await readLiveState(state.sessionId).catch(() => state);
+      if (latest.result) return latest.result;
+      await assertLiveServerReachable(latest);
+      await Bun.sleep(250);
+    }
+  }
 }
 
 async function respondToLiveRequest(sessionId: string, file: string): Promise<void> {
@@ -167,10 +183,12 @@ async function respondToLiveRequest(sessionId: string, file: string): Promise<vo
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
+class DroppedConnectionError extends Error {}
+
 async function liveRequest(
   state: LiveSessionState,
   path: string,
-  init?: RequestInit,
+  init?: BunFetchRequestInit,
   operation = "request",
 ): Promise<unknown> {
   let response: Response;
@@ -187,7 +205,7 @@ async function liveRequest(
     const retry = operation === "wait"
       ? `decisionator wait ${state.sessionId}`
       : `the decisionator ${operation} command for ${state.sessionId}`;
-    throw new Error(`The live session was reachable, but the ${operation} connection ended unexpectedly. Retry ${retry}.`);
+    throw new DroppedConnectionError(`The live session was reachable, but the ${operation} connection ended unexpectedly. Retry ${retry}.`);
   }
   const payload = await response.json() as { error?: string };
   if (response.status === 410) {

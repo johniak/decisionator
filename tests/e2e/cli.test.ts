@@ -2,10 +2,12 @@
 
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { connect, createServer, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { readLiveState, writeLiveState } from "../../src/server/live-state";
 import { decisionInput, sessionId } from "../fixtures";
 
 const run = promisify(execFile);
@@ -76,6 +78,42 @@ function api(baseUrl: string, token: string, path: string, init?: RequestInit) {
     ...init,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init?.headers },
   });
+}
+
+// Forwards to the live server and cuts the first agent waits, like an HTTP idle timeout does.
+// Bun's fetch silently retries one reset on a reused connection, so two waits are cut.
+async function dropFirstWaits(targetPort: number, count = 2) {
+  let markDropped!: () => void;
+  const dropped = new Promise<void>((resolve) => { markDropped = resolve; });
+  let seen = 0;
+  const sockets = new Set<Socket>();
+  const server = createServer((client) => {
+    const upstream = connect(targetPort, "127.0.0.1");
+    sockets.add(client).add(upstream);
+    client.on("data", (chunk) => {
+      if (seen < count && chunk.toString().startsWith("GET /api/agent/wait")) {
+        seen += 1;
+        const last = seen === count;
+        setTimeout(() => {
+          client.destroy();
+          upstream.destroy();
+          if (last) markDropped();
+        }, 300);
+      }
+    });
+    client.pipe(upstream).pipe(client);
+    client.on("error", () => upstream.destroy());
+    upstream.on("error", () => client.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    port: (server.address() as AddressInfo).port,
+    dropped,
+    close: () => {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    },
+  };
 }
 
 async function readEvent(reader: ReadableStreamDefaultReader<Uint8Array>, event: string) {
@@ -208,6 +246,26 @@ describe("Decisionator CLI", () => {
     expect(await readdir(join(root, "state"))).toEqual([]);
     await expect(cli(["respond", sessionId, "--file", reply])).rejects.toMatchObject({ stderr: expect.stringContaining("No live Decisionator session") });
   }, 60_000);
+
+  it("keeps waiting when the wait connection drops before the human acts", async () => {
+    const { env, file, cli } = await workspace();
+    const live = start(env, [sessionId, "--file", file, "--live", "--no-open"]);
+    const { baseUrl, token } = await live.ready;
+    const proxy = await dropFirstWaits(Number(new URL(baseUrl).port));
+    const state = await readLiveState(sessionId, env);
+    await writeLiveState({ ...state, baseUrl: `http://127.0.0.1:${proxy.port}` }, env);
+
+    const waiting = cli(["wait", sessionId]);
+    await proxy.dropped;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await api(baseUrl, token, "/api/discussion", {
+      method: "POST",
+      body: JSON.stringify({ items: [{ groupId: "layout", message: "Still there?" }] }),
+    });
+
+    expect(JSON.parse((await waiting).stdout)).toMatchObject({ status: "discussion", groupIds: ["layout"] });
+    proxy.close();
+  }, 30_000);
 
   it("keeps the final result for an agent that waits after the session closed", async () => {
     const { env, file, cli, root } = await workspace();

@@ -311,8 +311,10 @@ export class DecisionSession {
   private releaseAgentWaiter(): void {
     if (this.activeAgentRequest || this.pendingAgentRequests.length === 0 || this.agentWaiters.length === 0) return;
     this.activeAgentRequest = this.pendingAgentRequests.shift();
-    const resolve = this.agentWaiters.shift();
-    if (resolve && this.activeAgentRequest) resolve(this.agentResult(this.activeAgentRequest));
+    if (!this.activeAgentRequest) return;
+    // An agent may abandon a wait and start another, so every waiter gets the same request.
+    const result = this.agentResult(this.activeAgentRequest);
+    for (const resolve of this.agentWaiters.splice(0)) resolve(result);
   }
 
   private agentResult(result: SessionResult): AgentWaitResult {

@@ -81,6 +81,16 @@ describe("decision session", () => {
     await expect(waiting).resolves.toMatchObject({ status: "discussion", groupIds: ["notifications"] });
   });
 
+  it("wakes the agent's latest wait even when an earlier wait was abandoned", async () => {
+    const session = liveSession();
+    const abandoned = session.waitForAgentRequest();
+    const latest = session.waitForAgentRequest();
+    session.requestDiscussion({ items: [{ groupId: "layout", message: "Why steps?" }] });
+
+    await expect(latest).resolves.toMatchObject({ status: "discussion", groupIds: ["layout"] });
+    expect(await abandoned).toEqual(await latest);
+  });
+
   it("accepts several prepared threads in one request", async () => {
     const session = liveSession();
     session.requestDiscussion({
