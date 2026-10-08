@@ -476,3 +476,4 @@ td.diff-empty { background: rgba(255, 255, 255, .02); }
 .collapsed-row td { padding: 0; background: rgba(124, 196, 250, .05); }
 .collapsed-row button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 4px 12px; color: var(--sky); background: transparent; border: 0; font: 600 11.5px ui-sans-serif, system-ui, sans-serif; }
 .nav-unread { color: var(--sky); }
+.mockup-failed { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 12px; color: #ffd28a; background: #0f1218; border: 1px dashed var(--border); border-radius: 10px; font-size: 12.5px; }

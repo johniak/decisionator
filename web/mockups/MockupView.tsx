@@ -1,3 +1,5 @@
+import { TriangleAlert } from "lucide-react";
+import { Component, type ReactNode } from "react";
 import type { LeafMockup, Mockup } from "../../src/domain/decision";
 import { ImageBlock, PaletteBlock, StatsBlock, TableBlock } from "./Blocks";
 import { CodeBlock, DiffBlock } from "./CodeBlocks";
@@ -7,7 +9,27 @@ import { MermaidDiagram } from "./MermaidDiagram";
 
 export type AssetResolver = (path: string) => string | undefined;
 
-export function MockupView({ mockup, title, resolveAsset }: { mockup: Mockup; title: string; resolveAsset: AssetResolver }) {
+/** Keeps one broken visual from taking down the whole decision screen. */
+class MockupBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <p className="mockup-failed" role="alert"><TriangleAlert aria-hidden="true" size={14} /> This visual could not be shown.</p>;
+    }
+    return this.props.children;
+  }
+}
+
+export function MockupView(props: { mockup: Mockup; title: string; resolveAsset: AssetResolver }) {
+  return <MockupBoundary><MockupFigure {...props} /></MockupBoundary>;
+}
+
+function MockupFigure({ mockup, title, resolveAsset }: { mockup: Mockup; title: string; resolveAsset: AssetResolver }) {
   return (
     <figure className={`mockup mockup-${mockup.kind}`}>
       {mockup.kind === "split" ? (

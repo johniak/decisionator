@@ -8,37 +8,38 @@ export const mockupContentSecurityPolicy = "default-src 'none'; style-src 'unsaf
 /** The iframe sandbox for HTML mockups. Scripts stay disabled; same-origin only lets the page measure the height. */
 export const mockupSandbox = "allow-same-origin";
 
+/** DOMPurify returns its input unchanged where it is unsupported, so refuse to render instead. */
+function supportedPurifier() {
+  const purifier = DOMPurify(window);
+  if (!purifier.isSupported) throw new Error("This browser cannot sanitize agent-authored content safely.");
+  return purifier;
+}
+
 const urlAttributes = new Set(["href", "src", "srcset", "xlink:href", "poster", "action", "formaction", "background", "ping"]);
 
-/** Removes scripts, event handlers, embeds, forms, and every non-inline URL from agent-authored HTML. */
-export function sanitizeMockupHtml(html: string): { styles: string; body: string } {
-  const purifier = DOMPurify(window);
+/**
+ * Removes scripts, event handlers, embeds, forms, and every non-inline URL from agent-authored HTML.
+ * `FORCE_BODY` keeps `<style>` blocks that the agent placed in a `<head>`.
+ */
+export function sanitizeMockupHtml(html: string): string {
+  const purifier = supportedPurifier();
   purifier.addHook("uponSanitizeAttribute", (_node, data) => {
     if (!urlAttributes.has(data.attrName)) return;
     const value = data.attrValue.trim();
     if (value.startsWith("#") || /^data:image\/(png|jpe?g|gif|webp);/i.test(value)) return;
     data.keepAttr = false;
   });
-  const clean = purifier.sanitize(html, {
-    WHOLE_DOCUMENT: true,
+  return purifier.sanitize(html, {
+    FORCE_BODY: true,
     ADD_TAGS: ["style"],
-    FORBID_TAGS: ["script", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "link", "base", "noscript", "template", "portal"],
+    FORBID_TAGS: ["script", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "link", "base", "noscript", "template", "portal", "title"],
     FORBID_ATTR: ["target", "srcdoc"],
   }) as string;
-  const parsed = new DOMParser().parseFromString(clean, "text/html");
-  const styles = [...parsed.querySelectorAll("style")]
-    .map((style) => {
-      const css = style.textContent ?? "";
-      style.remove();
-      return `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
-    })
-    .join("\n");
-  return { styles, body: parsed.body.innerHTML };
 }
 
 /** Wraps a sanitized mockup in Decisionator's neutral design tokens for the chosen theme. */
 export function buildMockupDocument(html: string, theme: MockupTheme): string {
-  const { styles, body } = sanitizeMockupHtml(html);
+  const body = sanitizeMockupHtml(html);
   return `<!doctype html>
 <html lang="en" data-theme="${theme}">
 <head>
@@ -46,7 +47,6 @@ export function buildMockupDocument(html: string, theme: MockupTheme): string {
 <meta http-equiv="Content-Security-Policy" content="${mockupContentSecurityPolicy}">
 <meta name="referrer" content="no-referrer">
 <style>${neutralStyles}</style>
-${styles}
 </head>
 <body>${body}</body>
 </html>`;
@@ -54,7 +54,7 @@ ${styles}
 
 /** Sanitizes the SVG produced by Mermaid before it is inserted into the page. */
 export function sanitizeDiagramSvg(svg: string): string {
-  return DOMPurify(window).sanitize(svg, {
+  return supportedPurifier().sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
     ADD_TAGS: ["style"],
     FORBID_TAGS: ["script", "foreignObject", "a"],
