@@ -85,14 +85,14 @@ async function main(): Promise<void> {
   const server = serve(app.fetch, requestedPort ?? (previous ? Number(new URL(previous.baseUrl).port) : 0), requestedPort === undefined && previous !== undefined);
   const baseUrl = `http://127.0.0.1:${server.port}`;
   const url = `${baseUrl}/#${token}`;
-  process.stderr.write(`Decisionator is ready at ${url}\n`);
 
   let liveState: LiveSessionState | undefined;
   if (values.live) {
     liveState = { sessionId, baseUrl, token, pid: process.pid, startedAt: new Date().toISOString() };
     await writeLiveState(liveState);
-    process.stderr.write(`Live discussion is active for ${sessionId}\n`);
   }
+  process.stderr.write(`Decisionator is ready at ${url}\n`);
+  if (liveState) process.stderr.write(`Live discussion is active for ${sessionId}\n`);
 
   if (!values["no-open"]) {
     const reconnected = previous !== undefined

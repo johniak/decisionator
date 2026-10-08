@@ -60,7 +60,9 @@ export function renderDiagram(code: string): Promise<string> {
     const id = `decisionator-diagram-${renderCount}`;
     try {
       const { svg } = await mermaid.render(id, code);
-      return sanitizeDiagramSvg(svg);
+      const clean = sanitizeDiagramSvg(svg);
+      if (!clean.includes("<svg")) throw new Error("The diagram produced no drawable output.");
+      return clean;
     } finally {
       document.getElementById(`d${id}`)?.remove();
       document.getElementById(id)?.remove();
