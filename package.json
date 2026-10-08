@@ -25,6 +25,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run build:web && bun src/cli.ts",
+    "demo": "bun run build:web && bun scripts/demo.ts --live",
     "build": "bun run build:web && bun run build:cli",
     "build:web": "vite build && bun scripts/prepare-web.ts",
     "build:cli": "bun build --compile --minify --target=bun src/cli.ts --outfile dist/decisionator",
@@ -34,9 +35,9 @@
     "check": "bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.5.2",
     "@radix-ui/react-dialog": "^1.2.0",
     "clsx": "^2.1.1",
+    "diff": "^9.0.0",
     "dompurify": "^3.4.16",
     "hono": "^4.13.13",
     "lucide-react": "^1.53.0",
@@ -46,6 +47,7 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.10.1",
     "remark-gfm": "^4.0.1",
+    "shiki": "^4.5.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

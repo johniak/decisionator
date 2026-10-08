@@ -1,0 +1,276 @@
+{
+  "version": 1,
+  "sessionId": "checkout-redesign",
+  "language": "English",
+  "title": "Checkout redesign: decisions before the implementation plan",
+  "intro": "I reviewed the current checkout and the analytics export. Before I write the implementation plan I need **five decisions**. Each one changes the scope of the plan. Everything I will assume without asking is listed at the end.",
+  "groups": [
+    {
+      "id": "layout",
+      "title": "How should the checkout be laid out?",
+      "context": "Today everything sits on one long page (screenshots below). 38% of phone visitors leave at the payment section. The layout decides how much of the form we rebuild and how we measure drop-off.\n\nIf we pick wrong, we redesign again next quarter.",
+      "mode": "single",
+      "mockup": {
+        "kind": "split",
+        "leftLabel": "Current checkout on desktop",
+        "rightLabel": "Current checkout on a phone",
+        "left": { "kind": "image", "path": "assets/current-checkout-desktop.png", "alt": "Current one-page checkout on desktop" },
+        "right": { "kind": "image", "path": "assets/current-checkout-phone.png", "alt": "Current one-page checkout on a phone", "width": 260 },
+        "caption": "Captured from the staging build at 1280 px and 390 px wide."
+      },
+      "options": [
+        {
+          "id": "one-page",
+          "label": "Keep one page, tidy it",
+          "description": "Same structure, fewer fields, sticky order summary.",
+          "pros": ["Smallest change, about 3 days", "Everything stays visible"],
+          "cons": ["Long scroll on phones remains", "Drop-off per step stays unmeasurable"],
+          "mockup": {
+            "kind": "html",
+            "theme": "light",
+            "body": "<div class=\"dn-browser\"><div style=\"display:grid;grid-template-columns:1fr 220px;gap:14px;padding:16px\"><div class=\"dn-stack\"><div class=\"dn-card dn-stack\"><strong>Contact &amp; address</strong><div class=\"dn-input\">Email</div><div class=\"dn-input\">Address (autocomplete)</div></div><div class=\"dn-card dn-stack\"><strong>Delivery</strong><div class=\"dn-row\"><span class=\"dn-badge\">Standard</span><span class=\"dn-muted dn-small\">Express · Pickup</span></div></div><div class=\"dn-card dn-stack\"><strong>Payment</strong><div class=\"dn-input\">Card number</div></div></div><div class=\"dn-card dn-stack\" style=\"align-self:start\"><strong>Summary</strong><span class=\"dn-muted dn-small\">2 items · €46.70</span><button class=\"dn-btn dn-btn-primary\">Pay €46.70</button></div></div></div>"
+          }
+        },
+        {
+          "id": "steps",
+          "label": "Three steps",
+          "description": "Address, delivery, and payment on separate steps with a progress bar.",
+          "recommended": true,
+          "pros": ["Short payment step on phones", "Drop-off measurable per step"],
+          "cons": ["About 6 days of work", "One more click for returning customers"],
+          "mockup": {
+            "kind": "html",
+            "theme": "light",
+            "body": "<div class=\"dn-browser\"><div style=\"padding:16px\" class=\"dn-stack\"><div class=\"dn-row\"><span class=\"dn-badge\">1 Address</span><span class=\"dn-muted dn-small\">2 Delivery</span><span class=\"dn-muted dn-small\">3 Payment</span></div><div style=\"height:4px;border-radius:2px;background:linear-gradient(90deg,var(--dn-accent) 33%,var(--dn-border) 33%)\"></div><div class=\"dn-card dn-stack\" style=\"max-width:420px\"><strong>Where should we deliver?</strong><div class=\"dn-input\">Email</div><div class=\"dn-input\">Address (autocomplete)</div><div class=\"dn-row\"><span class=\"dn-spacer\"></span><button class=\"dn-btn dn-btn-primary\">Continue to delivery</button></div></div></div></div>"
+          }
+        },
+        {
+          "id": "accordion",
+          "label": "One page with collapsible sections",
+          "description": "One page, but finished sections collapse into a summary line.",
+          "pros": ["Feels shorter without new routes"],
+          "cons": ["Accordion state is fragile with browser back", "Harder to test end to end"],
+          "mockup": {
+            "kind": "html",
+            "theme": "light",
+            "body": "<div class=\"dn-phone\"><div class=\"dn-screen dn-stack\" style=\"padding:14px\"><div class=\"dn-card dn-row\"><span>✓ Anna Kowalska, Main St 4</span><span class=\"dn-spacer\"></span><span class=\"dn-muted dn-small\">Edit</span></div><div class=\"dn-card dn-row\"><span>✓ Standard delivery</span><span class=\"dn-spacer\"></span><span class=\"dn-muted dn-small\">Edit</span></div><div class=\"dn-card dn-stack dn-highlight\"><strong>Payment</strong><div class=\"dn-input\">Card number</div><div class=\"dn-row\"><div class=\"dn-input\" style=\"flex:1\">MM/YY</div><div class=\"dn-input\" style=\"flex:1\">CVC</div></div><button class=\"dn-btn dn-btn-primary\">Pay €46.70</button></div></div></div>"
+          }
+        }
+      ],
+      "recommendation": {
+        "optionIds": ["steps"],
+        "text": "Three steps fix the phone drop-off at the payment section and let us measure every step."
+      }
+    },
+    {
+      "id": "provider",
+      "title": "Which payment provider should we integrate first?",
+      "context": "We can integrate only one provider before the launch date. The fees below use last quarter's volume of 18,400 orders.",
+      "mode": "single",
+      "mockup": {
+        "kind": "table",
+        "columns": ["Capability", "Stripe", "Adyen", "Mollie"],
+        "rows": [
+          ["Card payments", true, true, true],
+          ["BLIK and Przelewy24", true, true, true],
+          ["Hosted payment page", true, true, true],
+          ["Live without a signed contract", true, false, true],
+          ["Monthly fee", "none", "€120", "none"],
+          ["Integration estimate", "4 days", "8 days", "5 days"]
+        ],
+        "highlightColumn": 1,
+        "caption": "Pricing from the providers' public pages on 1 October."
+      },
+      "options": [
+        {
+          "id": "stripe",
+          "label": "Stripe",
+          "description": "Best SDKs and test tooling. Slightly higher card fees at our volume.",
+          "recommended": true,
+          "pros": ["No contract, live within a week", "Excellent test mode"],
+          "cons": ["Highest blended fee at current volume"],
+          "mockup": {
+            "kind": "chart",
+            "type": "bar",
+            "x": "volume",
+            "xLabel": "Monthly orders",
+            "yLabel": "Monthly fees",
+            "unit": "€",
+            "series": [
+              { "key": "stripe", "label": "Stripe" },
+              { "key": "adyen", "label": "Adyen" },
+              { "key": "mollie", "label": "Mollie" }
+            ],
+            "data": [
+              { "volume": "4k", "stripe": 1880, "adyen": 1960, "mollie": 1820 },
+              { "volume": "6k", "stripe": 2820, "adyen": 2700, "mollie": 2750 },
+              { "volume": "10k", "stripe": 4700, "adyen": 4180, "mollie": 4560 }
+            ],
+            "caption": "Estimated fees per month by order volume."
+          }
+        },
+        {
+          "id": "adyen",
+          "label": "Adyen",
+          "description": "Lowest fees once we pass 6,000 orders a month, but needs a signed contract first.",
+          "pros": ["Cheapest at scale"],
+          "cons": ["Contract takes 3–4 weeks", "Monthly minimum fee"]
+        },
+        {
+          "id": "mollie",
+          "label": "Mollie",
+          "description": "Simple pricing and good local methods, smaller ecosystem.",
+          "pros": ["Simple pricing"],
+          "cons": ["Fewer SDK examples for our stack"]
+        }
+      ],
+      "recommendation": {
+        "optionIds": ["stripe"],
+        "text": "Stripe is the only option that fits the launch date without a contract."
+      },
+      "thread": {
+        "messages": [
+          { "id": "provider-u1", "author": "user", "body": "Does Stripe support BLIK without a separate agreement?" },
+          { "id": "provider-a1", "author": "agent", "body": "Yes. BLIK is available on Stripe accounts registered in Poland and needs no separate agreement. You enable it in the dashboard and it appears in the hosted payment page." }
+        ]
+      }
+    },
+    {
+      "id": "order-timing",
+      "title": "When should the order be created?",
+      "context": "This decides how we handle abandoned payments and stock reservation.",
+      "mode": "single",
+      "mockup": {
+        "kind": "mermaid",
+        "code": "sequenceDiagram\n  participant C as Customer\n  participant S as Shop\n  participant P as Provider\n  C->>S: Pay\n  S->>P: Create payment\n  P-->>C: Confirm with bank\n  P-->>S: Webhook: succeeded\n  S-->>C: Order confirmation",
+        "caption": "The payment flow both options share."
+      },
+      "options": [
+        {
+          "id": "before",
+          "label": "Before payment, as pending",
+          "description": "Create a pending order and reserve stock, then confirm it from the webhook.",
+          "recommended": true,
+          "mockup": {
+            "kind": "mermaid",
+            "code": "flowchart LR\n  A[Pay clicked] --> B[Pending order + stock reserved]\n  B --> C{Webhook}\n  C -->|succeeded| D[Order confirmed]\n  C -->|failed or 30 min timeout| E[Order cancelled, stock released]"
+          }
+        },
+        {
+          "id": "after",
+          "label": "After payment succeeds",
+          "description": "Create the order only from the success webhook.",
+          "mockup": {
+            "kind": "mermaid",
+            "code": "flowchart LR\n  A[Pay clicked] --> B{Webhook}\n  B -->|succeeded| C[Create order]\n  C --> D{Stock left?}\n  D -->|no| E[Refund and apologise]\n  D -->|yes| F[Order confirmed]"
+          }
+        }
+      ],
+      "recommendation": {
+        "optionIds": ["before"],
+        "text": "A pending order avoids selling the last item twice while the bank confirms."
+      }
+    },
+    {
+      "id": "notifications",
+      "title": "Which order notifications should ship at launch?",
+      "context": "Choose every channel we should send the order confirmation through.",
+      "mode": "multi",
+      "allowOther": true,
+      "mockup": {
+        "kind": "stats",
+        "items": [
+          { "label": "Email open rate", "value": "71%", "detail": "+4 pts vs last year", "tone": "positive" },
+          { "label": "SMS cost per order", "value": "€0.06", "detail": "€1,100 a quarter", "tone": "warning" },
+          { "label": "App users", "value": "12%", "detail": "of orders", "tone": "neutral" }
+        ]
+      },
+      "options": [
+        { "id": "email", "label": "Email", "description": "Already built, needs a new template." },
+        { "id": "sms", "label": "SMS", "description": "Needs a provider and consent text in the address step." },
+        { "id": "push", "label": "App push", "description": "Only reaches app users." }
+      ]
+    },
+    {
+      "id": "accent",
+      "title": "Which accent colour should the pay button use?",
+      "context": "The button colour is the only brand change in this round. Both meet 4.5:1 contrast with white text.",
+      "mode": "single",
+      "options": [
+        {
+          "id": "teal",
+          "label": "Keep brand teal",
+          "description": "Matches the logo and the rest of the shop.",
+          "mockup": {
+            "kind": "palette",
+            "colors": [
+              { "name": "Pay button", "value": "#0f766e", "usage": "Primary action" },
+              { "name": "Hover", "value": "#115e59" },
+              { "name": "Focus ring", "value": "#5eead4" }
+            ]
+          }
+        },
+        {
+          "id": "indigo",
+          "label": "Switch to indigo",
+          "description": "Stands out more from the green delivery badges.",
+          "mockup": {
+            "kind": "palette",
+            "colors": [
+              { "name": "Pay button", "value": "#4338ca", "usage": "Primary action" },
+              { "name": "Hover", "value": "#3730a3" },
+              { "name": "Focus ring", "value": "#a5b4fc" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "title": "How should the checkout API return validation errors?",
+      "context": "The new steps validate on the server. The error shape is hard to change after the mobile app adopts it.",
+      "mode": "single",
+      "options": [
+        {
+          "id": "field-map",
+          "label": "Map of field errors",
+          "description": "One object keyed by field name. Easy to bind to the form.",
+          "recommended": true,
+          "mockup": {
+            "kind": "code",
+            "language": "json",
+            "filename": "422 response",
+            "code": "{\n  \"errors\": {\n    \"postcode\": \"Enter a valid postcode\",\n    \"email\": \"This email is already registered\"\n  }\n}"
+          }
+        },
+        {
+          "id": "problem-details",
+          "label": "RFC 9457 problem details",
+          "description": "A standard error document with a list of invalid fields.",
+          "mockup": {
+            "kind": "diff",
+            "language": "ts",
+            "filename": "src/checkout/errors.ts",
+            "before": "export type CheckoutError = {\n  message: string;\n};\n",
+            "after": "export type CheckoutError = {\n  type: string;\n  title: string;\n  status: 422;\n  invalidParams: { name: string; reason: string }[];\n};\n"
+          }
+        }
+      ],
+      "recommendation": {
+        "optionIds": ["field-map"],
+        "text": "A field map binds directly to the form and the mobile app already parses it."
+      }
+    },
+    {
+      "id": "headline",
+      "title": "What should the confirmation page say?",
+      "context": "Write the headline customers see after paying. I will use it in the email subject too.",
+      "mode": "text"
+    }
+  ],
+  "assumptions": [
+    { "id": "currency", "text": "Prices stay in EUR only for this release." },
+    { "id": "guest", "text": "Guest checkout stays available; accounts remain optional." },
+    { "id": "flag", "text": "The new checkout ships behind the `checkout_v2` flag at 10% of traffic." }
+  ]
+}

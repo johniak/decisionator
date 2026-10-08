@@ -58,7 +58,7 @@ export function contentSecurityPolicy(html: string): string {
     .map((match) => `'sha256-${createHash("sha256").update(match[1] ?? "").digest("base64")}'`);
   return [
     "default-src 'none'",
-    `script-src ${scriptHashes.join(" ") || "'none'"} 'wasm-unsafe-eval'`,
+    `script-src ${scriptHashes.join(" ") || "'none'"}`,
     "style-src 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src data:",
