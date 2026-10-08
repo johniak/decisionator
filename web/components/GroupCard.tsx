@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Info, Lightbulb, MinusCircle, PenLine, RotateCcw, Sparkles, SkipForward, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Bot, Info, Lightbulb, MinusCircle, PenLine, RotateCcw, Sparkles, SkipForward, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { MouseEvent } from "react";
 import type { DecisionGroup, DecisionOption } from "../../src/domain/decision";
 import { chooseOption, chooseOther, skipGroup, type GroupDraft } from "../draft";
@@ -33,6 +33,7 @@ type Props = {
   index: number;
   draft: GroupDraft;
   status: GroupStatus;
+  unreadReply?: boolean;
   language?: string;
   readOnly?: boolean;
   active?: boolean;
@@ -54,6 +55,7 @@ export function GroupCard({
   index,
   draft,
   status,
+  unreadReply = false,
   language,
   readOnly = false,
   active = false,
@@ -90,6 +92,9 @@ export function GroupCard({
             <span className="revised-badge" title={`Changed: ${revision.changes.map((change) => changeLabels[change] ?? change).join(", ")}`}>
               <Sparkles aria-hidden="true" size={12} /> Revised in version {revision.number}
             </span>
+          )}
+          {unreadReply && status !== "agent_replied" && (
+            <span className="status-badge status-agent_replied"><Bot aria-hidden="true" size={12} /> New reply</span>
           )}
           {!readOnly && <StatusBadge status={status} />}
         </div>

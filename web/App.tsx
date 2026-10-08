@@ -24,7 +24,7 @@ import {
   type GroupDraft,
 } from "./draft";
 import { languageTag } from "./language";
-import { groupStatus, progressSummary, type GroupStatus } from "./status";
+import { groupStatus, hasUnreadReply, progressSummary, type GroupStatus } from "./status";
 import type { SessionSnapshot } from "./types";
 
 type Completion = ConfirmedResult | CancelledResult | { status: "discussion" };
@@ -73,7 +73,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
     known.current = next;
     setSession(next);
     if (!previous) {
-      const restored = reconcileDraft(loadDraft(storage, next.sessionId), next.document);
+      const restored = reconcileDraft(loadDraft(storage, next.sessionId, next.document), next.document);
       setDraft(restored.draft);
       setActiveGroupId(next.document.groups[0]?.id ?? null);
       return;
@@ -301,6 +301,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
         <GroupNavigation
           document={document}
           statuses={statuses}
+          unreadGroupIds={document.groups.filter((group) => hasUnreadReply(group, draft)).map(({ id }) => id)}
           progress={progressSummary(document, draft)}
           activeGroupId={activeGroupId}
           revisedGroupIds={revisedGroupIds}
@@ -334,6 +335,7 @@ export function App({ storage = browserStorage() }: { storage?: Storage }) {
                 index={index}
                 draft={viewedRevision ? groupDraft(emptyDraft, group.id) : groupDraft(draft, group.id)}
                 status={viewedRevision ? "pending" : statuses[group.id]!}
+                unreadReply={!viewedRevision && hasUnreadReply(group, draft)}
                 language={lang}
                 readOnly={Boolean(viewedRevision)}
                 active={!viewedRevision && activeGroupId === group.id}

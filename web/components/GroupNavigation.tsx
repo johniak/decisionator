@@ -1,11 +1,13 @@
 import clsx from "clsx";
 import { ListChecks, MessageSquareText, Sparkles } from "lucide-react";
 import type { DecisionDocument } from "../../src/domain/decision";
+import { languageTag } from "../language";
 import { statusLabels, type GroupStatus } from "../status";
 
 type Props = {
   document: DecisionDocument;
   statuses: Record<string, GroupStatus>;
+  unreadGroupIds: string[];
   progress: string;
   activeGroupId: string | null;
   revisedGroupIds: string[];
@@ -17,6 +19,7 @@ type Props = {
 export function GroupNavigation({
   document,
   statuses,
+  unreadGroupIds,
   progress,
   activeGroupId,
   revisedGroupIds,
@@ -48,9 +51,10 @@ export function GroupNavigation({
             >
               <span className="nav-number">{index + 1}</span>
               <span className="nav-identity">
-                <strong lang={document.language}>{group.title}</strong>
+                <strong lang={languageTag(document.language)}>{group.title}</strong>
                 <small className={`nav-status-${status}`}>
                   {statusLabels[status]}
+                  {unreadGroupIds.includes(group.id) && status !== "agent_replied" && <span className="nav-unread">New reply</span>}
                   {revisedGroupIds.includes(group.id) && <span className="nav-revised"><Sparkles aria-hidden="true" size={10} /> Revised</span>}
                 </small>
               </span>

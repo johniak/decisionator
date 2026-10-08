@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DecisionDocument } from "../../src/domain/decision";
 import { buildConfirmedResult, type ConfirmRequest, type ConfirmedResult } from "../../src/domain/protocol";
 import { toConfirmRequest, unansweredGroups, type Draft } from "../draft";
+import { languageTag } from "../language";
 
 type Props = {
   open: boolean;
@@ -156,12 +157,12 @@ function UnansweredStep({
           const recommended = group.options.filter((option) => group.recommendation?.optionIds.includes(option.id));
           return (
             <li key={group.id}>
-              <button type="button" className="text-button" onClick={() => onGoToGroup(group.id)} lang={document.language}>
+              <button type="button" className="text-button" onClick={() => onGoToGroup(group.id)} lang={languageTag(document.language)}>
                 {group.title}
               </button>
               <span>
                 {recommended.length > 0
-                  ? <>If skipped, the agent uses its recommendation: <strong lang={document.language}>{recommended.map(({ label }) => label).join(", ")}</strong></>
+                  ? <>If skipped, the agent uses its recommendation: <strong lang={languageTag(document.language)}>{recommended.map(({ label }) => label).join(", ")}</strong></>
                   : "No recommendation. If skipped, no decision is recorded and the agent has to ask again."}
               </span>
             </li>
@@ -184,7 +185,7 @@ function UnansweredStep({
 export function ResultSummary({ result, document }: { result: ConfirmedResult; document: DecisionDocument }) {
   const { answers } = result;
   return (
-    <div className="result-summary" lang={document.language}>
+    <div className="result-summary" lang={languageTag(document.language)}>
       <ol className="result-groups">
         {answers.groups.map((group) => (
           <li key={group.groupId} className={clsx("result-group", group.status === "skipped" && "skipped")}>

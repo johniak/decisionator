@@ -43,10 +43,19 @@ export function draftStorageKey(sessionId: string): string {
   return `decisionator:draft:${sessionId}`;
 }
 
-export function loadDraft(storage: Storage | undefined, sessionId: string): Draft {
+/** A fresh draft treats agent replies that came with the first document as already read. */
+export function initialDraft(document?: DecisionDocument): Draft {
+  const seenMessageIds = (document?.groups ?? [])
+    .flatMap((group) => group.thread.messages)
+    .filter((message) => message.author === "agent")
+    .map(({ id }) => id);
+  return { ...emptyDraft, seenMessageIds };
+}
+
+export function loadDraft(storage: Storage | undefined, sessionId: string, document?: DecisionDocument): Draft {
   try {
     const raw = storage?.getItem(draftStorageKey(sessionId));
-    if (!raw) return emptyDraft;
+    if (!raw) return initialDraft(document);
     const parsed = JSON.parse(raw) as Partial<Draft>;
     return {
       groups: Object.fromEntries(Object.entries(parsed.groups ?? {}).map(([id, group]) => [id, { ...emptyGroupDraft, ...group }])),
@@ -55,7 +64,7 @@ export function loadDraft(storage: Storage | undefined, sessionId: string): Draf
       seenMessageIds: parsed.seenMessageIds ?? [],
     };
   } catch {
-    return emptyDraft;
+    return initialDraft(document);
   }
 }
 

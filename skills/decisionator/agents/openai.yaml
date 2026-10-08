@@ -1,0 +1,4 @@
+interface:
+  display_name: "Decisionator"
+  short_description: "Ask for batched decisions visually"
+  default_prompt: "Use $decisionator to ask me for the decisions you need before you continue."

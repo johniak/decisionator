@@ -475,3 +475,4 @@ td.diff-empty { background: rgba(255, 255, 255, .02); }
 .diff-removed .diff-marker { color: var(--red); }
 .collapsed-row td { padding: 0; background: rgba(124, 196, 250, .05); }
 .collapsed-row button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 4px 12px; color: var(--sky); background: transparent; border: 0; font: 600 11.5px ui-sans-serif, system-ui, sans-serif; }
+.nav-unread { color: var(--sky); }
