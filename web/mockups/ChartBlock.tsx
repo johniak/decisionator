@@ -78,7 +78,7 @@ function chartDescription(chart: Chart): string {
   return `${chart.type} chart of ${series} by ${chart.xLabel ?? chart.x}. Use "Show data" for the values.`;
 }
 
-const prefixUnits = new Set(["$", "€", "£", "¥", "₹", "zł"]);
+const prefixUnits = new Set(["$", "€", "£", "¥", "₹"]);
 
 export function formatValue(value: unknown, unit?: string, compact = false): string {
   if (typeof value !== "number") return value === null || value === undefined ? "—" : String(value);
@@ -87,7 +87,7 @@ export function formatValue(value: unknown, unit?: string, compact = false): str
     : { maximumFractionDigits: 2 }).format(value);
   if (!unit) return formatted;
   if (unit === "%") return `${formatted}%`;
-  if (prefixUnits.has(unit) && unit !== "zł") return `${unit}${formatted}`;
+  if (prefixUnits.has(unit)) return `${unit}${formatted}`;
   return `${formatted} ${unit}`;
 }
 

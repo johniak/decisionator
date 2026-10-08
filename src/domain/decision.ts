@@ -345,7 +345,7 @@ export function validateAgentDocument(document: DecisionDocument): void {
     }
     if (group.thread.messages.at(-1)?.author === "user") {
       throw new InvalidDocumentError(
-        `The discussion in group ${group.id} ends with a user message. Answer it before opening the screen.`,
+        `The discussion in group ${group.id} ends with a user message. Add exactly one agent reply to it.`,
       );
     }
   }
