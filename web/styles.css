@@ -49,7 +49,9 @@ button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visib
 }
 
 /* Header */
-.app-shell { height: 100vh; overflow: hidden; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
+.app-shell { position: relative; height: 100vh; overflow: hidden; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
+/* Contain absolutely positioned helpers such as .sr-only inside their scrolling pane. */
+.navigation-panel, .decision-canvas, .panel-content, .dialog-content, .zoom-dialog-body { position: relative; }
 .app-header {
   display: grid; grid-template-columns: 280px minmax(0, 1fr) auto; align-items: center; gap: 24px;
   padding: 0 20px; background: rgba(16, 20, 26, .95); border-bottom: 1px solid var(--border);
